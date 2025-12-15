@@ -22,7 +22,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.sensors import FrameTransformerCfg
+from isaaclab.sensors import FrameTransformerCfg, CameraCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
 from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
@@ -37,6 +37,7 @@ import math
 import os
 from pathlib import Path
 import numpy as np
+import torch
 # from . import mdp  # Using mdp from isaaclab_tasks.manager_based.manipulation.lift instead
 
 ##
@@ -171,10 +172,120 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
     )
 
+    # Wrist-mounted camera for visual observations
+    # Captures depth and segmentation for visual feature extraction
+    wrist_camera = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/wrist_camera",
+        update_period=0.1,  # 10 Hz update
+        height=480,
+        width=640,
+        data_types=["rgb", "distance_to_image_plane", "instance_segmentation_fast"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.01, 1e5),
+        ),
+        offset=CameraCfg.OffsetCfg(
+            pos=(0.05, 0.0, 0.15),  # Offset from wrist_3_link
+            rot=(0.5, -0.5, 0.5, -0.5),  # Look forward along gripper axis
+            convention="world",
+        ),
+    )
+
 
 ##
 # MDP settings
 ##
+
+# Camera observation functions (for raw image-based learning - requires CNN)
+def wrist_camera_rgb(env) -> torch.Tensor:
+    """RGB image from wrist camera."""
+    camera_data = env.scene["wrist_camera"].data.output["rgb"]
+    # Return as (batch, height, width, channels)
+    return camera_data[..., :3].float()
+
+
+def wrist_camera_depth(env) -> torch.Tensor:
+    """Depth image from wrist camera (normalized)."""
+    camera_data = env.scene["wrist_camera"].data.output["distance_to_image_plane"]
+    # Normalize depth to [0, 1] range, clip at 2 meters
+    depth_max = 2.0
+    depth_normalized = torch.clamp(camera_data, 0.0, depth_max) / depth_max
+    return depth_normalized.unsqueeze(-1)  # Add channel dimension
+
+
+def visual_object_features(env) -> torch.Tensor:
+    """
+    Extract engineered visual features from camera data.
+    This is more sample-efficient than raw images for RL.
+
+    Similar to MetaIsaacGrasp but used continuously during learning.
+    """
+    # Get camera data
+    camera = env.scene["wrist_camera"]
+    depth = camera.data.output["distance_to_image_plane"]
+    segmentation = camera.data.output["instance_segmentation_fast"]
+
+    batch_size = depth.shape[0]
+    features = torch.zeros(batch_size, 7, device=env.device)
+
+    for i in range(batch_size):
+        # Get instance segmentation (take first channel if multi-channel)
+        seg = segmentation[i]
+        if seg.ndim == 3:
+            seg = seg[..., 0]  # Take first channel
+
+        # Find object pixels (ID > 1, where 0=background, 1=robot)
+        object_mask = seg > 1
+
+        if object_mask.any():
+            # Get object pixels coordinates
+            object_pixels = object_mask.nonzero()
+
+            # Compute centroid in image space
+            centroid_v = object_pixels[:, 0].float().mean()  # y (height)
+            centroid_u = object_pixels[:, 1].float().mean()  # x (width)
+
+            # Get average depth at object (handle depth shape)
+            depth_map = depth[i]
+            if depth_map.ndim == 3:
+                depth_map = depth_map[..., 0]  # Take first channel if multi-channel
+            object_depth = depth_map[object_mask].mean()
+
+            # Simple projection to camera frame (approximate)
+            # For more accurate: use camera.data.intrinsic_matrices
+            cam_height, cam_width = depth.shape[1:3]
+            focal_length = 24.0  # From camera config
+
+            # Normalized image coordinates
+            u_norm = (centroid_u - cam_width / 2) / focal_length
+            v_norm = (centroid_v - cam_height / 2) / focal_length
+
+            # 3D position in camera frame (approximate)
+            x_cam = u_norm * object_depth
+            y_cam = v_norm * object_depth
+            z_cam = object_depth
+
+            # Get end-effector pose to transform to robot frame
+            ee_pose = env.scene["ee_frame"].data.target_pos_source[i, 0, :]
+
+            # Compute distance to object (in camera frame)
+            distance = torch.sqrt(x_cam**2 + y_cam**2 + z_cam**2)
+
+            # Pack features
+            features[i] = torch.tensor([
+                x_cam, y_cam, z_cam,           # Object position in camera frame (3)
+                distance,                       # Distance to object (1)
+                centroid_u / cam_width,        # Normalized image x (1)
+                centroid_v / cam_height,       # Normalized image y (1)
+                object_depth / 2.0,            # Normalized depth (1)
+            ], device=env.device)
+        else:
+            # No object visible - use default values
+            features[i] = torch.zeros(7, device=env.device)
+
+    return features
 
 
 @configclass
@@ -220,18 +331,44 @@ class ObservationsCfg:
     class PolicyCfg(ObsGroup):
         """Observations for policy group."""
 
+        # Proprioceptive observations
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
-        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+
+        # Visual observations (replaces ground truth object_position)
+        visual_features = ObsTerm(func=visual_object_features)
+
+        # Task command
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         actions = ObsTerm(func=mdp.last_action)
+
+        # OPTION A: Vision-based (no ground truth)
+        # Uses visual_features from camera to locate object
+        # More realistic for sim-to-real transfer
+
+        # OPTION B: Ground truth (uncomment below, comment visual_features above)
+        # object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        # Uses perfect knowledge from simulator
+        # Faster to train but won't transfer to real robot
 
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
 
+    @configclass
+    class ImageCfg(ObsGroup):
+        """Visual observations from wrist camera."""
+
+        rgb = ObsTerm(func=wrist_camera_rgb)
+        depth = ObsTerm(func=wrist_camera_depth)
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = False  # Keep images separate
+
     # observation groups
     policy: PolicyCfg = PolicyCfg()
+    # image: ImageCfg = ImageCfg()  # Disabled: not using vision-based policy
 
 
 @configclass
