@@ -142,10 +142,10 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         visualizer_cfg=FRAME_MARKER_CFG.replace(prim_path="/Visuals/FrameTransformer"),
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link",
+                prim_path="{ENV_REGEX_NS}/Robot/hande_end",
                 name="end_effector",
                 offset=OffsetCfg(
-                    pos=[0.0, 0.0, 0.1],  # Offset from wrist to gripper tip
+                    pos=[0.0, 0.0, 0.0],  # hande_end is already at gripper tip
                 ),
             ),
         ],
