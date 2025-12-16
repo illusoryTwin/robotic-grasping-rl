@@ -25,7 +25,7 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Play UR10 lift task with trained RSL-RL PPO policy")
 parser.add_argument("--task", type=str, default="Isaac-Lift-UR10-v0", help="Name of the task.")
 parser.add_argument("--checkpoint", type=str, required=True, help="Path to the trained model checkpoint (.pt file)")
-parser.add_argument("--num_envs", type=int, default=32, help="Number of environments to simulate.")
+parser.add_argument("--num_envs", type=int, default=4, help="Number of environments to simulate.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 AppLauncher.add_app_launcher_args(parser)
 

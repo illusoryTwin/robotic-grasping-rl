@@ -461,7 +461,7 @@ class CurriculumCfg:
 
 
 @configclass
-class UR10LiftEnvCfg(ManagerBasedRLEnvCfg):
+class UR10LiftEnvCfg2(ManagerBasedRLEnvCfg):
     """Configuration for the lifting environment."""
 
     # Scene settings
