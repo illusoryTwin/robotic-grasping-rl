@@ -38,52 +38,38 @@ import os
 from pathlib import Path
 import numpy as np
 import torch
-# from . import mdp  # Using mdp from isaaclab_tasks.manager_based.manipulation.lift instead
+
+# Import robot configuration from assets
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from assets import UR10_WITH_GRIPPER_CFG
+
+# Import custom observation functions
+from manip_tasks.observations import (
+    object_orientation_in_robot_root_frame,
+    wrist_camera_rgb,
+    wrist_camera_depth,
+    visual_object_features,
+)
+
+# Import custom reward functions
+from manip_tasks.rewards import (
+    object_rotation_penalty,
+    object_translation_penalty,
+    asymmetric_finger_contact_penalty,
+    centered_grasp_reward,
+    grasp_stability_reward,
+    finger_object_proximity_reward,
+    object_height_reward,
+    object_lift_progress_reward,
+    both_fingers_contact_reward,
+    symmetric_grasp_reward,
+    grasp_force_reward,
+)
 
 ##
 # Scene definition
 ##
-
-
-
-UR10_WITH_GRIPPER_CFG = ArticulationCfg(
-    spawn=UsdFileCfg(
-        usd_path="/home/ekaterina-mozhegova/Workspace/manipulation_rl/assets/ur10e_with_hand_e_and_camera_mount.usd",
-        activate_contact_sensors=False,
-        rigid_props=RigidBodyPropertiesCfg(
-            disable_gravity=False,
-            max_depenetration_velocity=5.0,
-        ),
-    ),
-    init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.0),
-        rot=(1.0, 0.0, 0.0, 0.0),
-        joint_pos={
-            "shoulder_pan_joint": 0.0,
-            "shoulder_lift_joint": -1.712,
-            "elbow_joint": 1.712,
-            "wrist_1_joint": 0.0,
-            "wrist_2_joint": 0.0,
-            "wrist_3_joint": 0.0,
-        },
-    ),
-    actuators={
-        "arm": ImplicitActuatorCfg(
-            joint_names_expr=["shoulder_.*", "elbow_joint", "wrist_.*"],
-            velocity_limit=100.0,
-            effort_limit=87.0,
-            stiffness=800.0,
-            damping=40.0,
-        ),
-        "gripper": ImplicitActuatorCfg(
-            joint_names_expr=[".*finger.*"],
-            velocity_limit=0.2,
-            effort_limit=200.0,
-            stiffness=2e3,
-            damping=1e2,
-        ),
-    },
-)
 
 
 
@@ -92,7 +78,10 @@ MODALITIES = {
     "distance_to_image_plane": 1,
     "normals": 4,
     "instance_segmentation_fast": 1,
-    }
+}
+
+# Object paths (defined outside class to avoid being treated as asset config)
+OBJECTS_DIR = os.path.join(str(Path.home()), "Workspace/manipulation_rl_new/objects")
 
 
 @configclass
@@ -105,35 +94,29 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     # Set UR10 as robot
     robot = UR10_WITH_GRIPPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-    # object = RigidObjectCfg(
-    #     prim_path="{ENV_REGEX_NS}/Object",
-    #     init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
-    #     spawn=UsdFileCfg(
-    #         usd_path=os.path.join(
-    #             str(Path.home()),
-    #             "Workspace/manipulation_rl/objects/tetra-pak-carton.usd"
-    #             # "Workspace/manipulation_rl/objects/tin-can.usd"
-    #         ),
-    #         # scale=(0.8, 0.8, 0.8),
-    #         rigid_props=RigidBodyPropertiesCfg(
-    #             solver_position_iteration_count=16,
-    #             solver_velocity_iteration_count=1,
-    #             max_angular_velocity=1000.0,
-    #             max_linear_velocity=1000.0,
-    #             max_depenetration_velocity=5.0,
-    #             disable_gravity=False,
-    #         # collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-    #         )
-    #     ),
-    # )
-
-    # Set Cube as object
+    # Multi-object configuration: randomly spawns one of three objects per environment
     object = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Object",
         init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
-        spawn=UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-            scale=(0.8, 0.8, 0.8),
+        spawn=sim_utils.MultiAssetSpawnerCfg(
+            assets_cfg=[
+                # Tetra Pak (height ~0.2m scaled)
+                UsdFileCfg(
+                    usd_path=os.path.join(OBJECTS_DIR, "tetra-pak-carton.usd"),
+                    scale=(0.8, 0.8, 0.8),
+                ),
+                # Tin Can (height ~0.11m scaled)
+                UsdFileCfg(
+                    usd_path=os.path.join(OBJECTS_DIR, "tin-can.usd"),
+                    scale=(0.8, 0.8, 0.8),
+                ),
+                # Chips Bag (height ~0.27m scaled)
+                UsdFileCfg(
+                    usd_path=os.path.join(OBJECTS_DIR, "chips-bag.usd"),
+                    scale=(0.8, 0.8, 0.8),
+                ),
+            ],
+            random_choice=False,  # Cycle through objects: env_idx % num_objects
             rigid_props=RigidBodyPropertiesCfg(
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=1,
@@ -142,8 +125,10 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
                 max_depenetration_velocity=5.0,
                 disable_gravity=False,
             ),
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
         ),
     )
+
 
     # Frame transformer for end-effector tracking
     ee_frame = FrameTransformerCfg(
@@ -181,122 +166,35 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
     )
 
-    wrist_camera = CameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/wrist_camera",
-        update_period=0.001,
-        height=480,
-        width=640,
-        data_types=[*MODALITIES],
-        colorize_instance_id_segmentation=False,
-        colorize_semantic_segmentation=False,
-        colorize_instance_segmentation=False,
-        spawn=sim_utils.PinholeCameraCfg(
-            focal_length=24.0,
-            focus_distance=400.0,
-            horizontal_aperture=20.955,
-            clipping_range=(0.01, 1e5),
-        ),
-        offset=CameraCfg.OffsetCfg(
-            pos=(0.1, 0.1, 0.1), 
-            rot=(0.1, 0.1, 0.1, 0.1), 
-            convention="ros",
-        ),
-    )
+    # Camera disabled for faster training with privileged info
+    # Uncomment to enable vision-based training
+    # wrist_camera = CameraCfg(
+    #     prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/wrist_camera",
+    #     update_period=0.001,
+    #     height=480,
+    #     width=640,
+    #     data_types=[*MODALITIES],
+    #     colorize_instance_id_segmentation=False,
+    #     colorize_semantic_segmentation=False,
+    #     colorize_instance_segmentation=False,
+    #     spawn=sim_utils.PinholeCameraCfg(
+    #         focal_length=24.0,
+    #         focus_distance=400.0,
+    #         horizontal_aperture=20.955,
+    #         clipping_range=(0.01, 1e5),
+    #     ),
+    #     offset=CameraCfg.OffsetCfg(
+    #         pos=(0.1, 0.1, 0.1), 
+    #         rot=(0.1, 0.1, 0.1, 0.1), 
+    #         convention="ros",
+    #     ),
+    # )
 
 
 
 ##
 # MDP settings
 ##
-
-# Camera observation functions (for raw image-based learning - requires CNN)
-def wrist_camera_rgb(env) -> torch.Tensor:
-    """RGB image from wrist camera."""
-    camera_data = env.scene["wrist_camera"].data.output["rgb"]
-    # Return as (batch, height, width, channels)
-    return camera_data[..., :3].float()
-
-
-def wrist_camera_depth(env) -> torch.Tensor:
-    """Depth image from wrist camera (normalized)."""
-    camera_data = env.scene["wrist_camera"].data.output["distance_to_image_plane"]
-    # Normalize depth to [0, 1] range, clip at 2 meters
-    depth_max = 2.0
-    depth_normalized = torch.clamp(camera_data, 0.0, depth_max) / depth_max
-    return depth_normalized.unsqueeze(-1)  # Add channel dimension
-
-
-def visual_object_features(env) -> torch.Tensor:
-    """
-    Extract engineered visual features from camera data.
-    This is more sample-efficient than raw images for RL.
-
-    Similar to MetaIsaacGrasp but used continuously during learning.
-    """
-    # Get camera data
-    camera = env.scene["wrist_camera"]
-    depth = camera.data.output["distance_to_image_plane"]
-    segmentation = camera.data.output["instance_segmentation_fast"]
-
-    batch_size = depth.shape[0]
-    features = torch.zeros(batch_size, 7, device=env.device)
-
-    for i in range(batch_size):
-        # Get instance segmentation (take first channel if multi-channel)
-        seg = segmentation[i]
-        if seg.ndim == 3:
-            seg = seg[..., 0]  # Take first channel
-
-        # Find object pixels (ID > 1, where 0=background, 1=robot)
-        object_mask = seg > 1
-
-        if object_mask.any():
-            # Get object pixels coordinates
-            object_pixels = object_mask.nonzero()
-
-            # Compute centroid in image space
-            centroid_v = object_pixels[:, 0].float().mean()  # y (height)
-            centroid_u = object_pixels[:, 1].float().mean()  # x (width)
-
-            # Get average depth at object (handle depth shape)
-            depth_map = depth[i]
-            if depth_map.ndim == 3:
-                depth_map = depth_map[..., 0]  # Take first channel if multi-channel
-            object_depth = depth_map[object_mask].mean()
-
-            # Simple projection to camera frame (approximate)
-            # For more accurate: use camera.data.intrinsic_matrices
-            cam_height, cam_width = depth.shape[1:3]
-            focal_length = 24.0  # From camera config
-
-            # Normalized image coordinates
-            u_norm = (centroid_u - cam_width / 2) / focal_length
-            v_norm = (centroid_v - cam_height / 2) / focal_length
-
-            # 3D position in camera frame (approximate)
-            x_cam = u_norm * object_depth
-            y_cam = v_norm * object_depth
-            z_cam = object_depth
-
-            # Get end-effector pose to transform to robot frame
-            ee_pose = env.scene["ee_frame"].data.target_pos_source[i, 0, :]
-
-            # Compute distance to object (in camera frame)
-            distance = torch.sqrt(x_cam**2 + y_cam**2 + z_cam**2)
-
-            # Pack features
-            features[i] = torch.tensor([
-                x_cam, y_cam, z_cam,           # Object position in camera frame (3)
-                distance,                       # Distance to object (1)
-                centroid_u / cam_width,        # Normalized image x (1)
-                centroid_v / cam_height,       # Normalized image y (1)
-                object_depth / 2.0,            # Normalized depth (1)
-            ], device=env.device)
-        else:
-            # No object visible - use default values
-            features[i] = torch.zeros(7, device=env.device)
-
-    return features
 
 
 @configclass
@@ -305,11 +203,16 @@ class CommandsCfg:
 
     object_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
-        body_name="wrist_3_link",
+        body_name="hande_end",  # End-effector frame (gripper tip)
         resampling_time_range=(5.0, 5.0),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(0.4, 0.6), pos_y=(-0.25, 0.25), pos_z=(0.25, 0.5), roll=(0.0, 0.0), pitch=(0.0, 0.0), yaw=(0.0, 0.0)
+            pos_x=(0.4, 0.6), 
+            pos_y=(-0.25, 0.25), 
+            pos_z=(0.25, 0.5), 
+            roll=(0.0, 0.0), 
+            pitch=(0.0, 0.0), 
+            yaw=(0.0, 0.0)
         ),
     )
 
@@ -328,7 +231,7 @@ class ActionsCfg:
     gripper_action = mdp.BinaryJointPositionActionCfg(
         asset_name="robot",
         joint_names=[".*finger.*"],
-        open_command_expr={".*finger.*": 0.04},  # Open gripper
+        open_command_expr={".*finger.*": 0.0425},  # Open gripper
         close_command_expr={".*finger.*": 0.0},  # Close gripper
     )
 
@@ -346,21 +249,20 @@ class ObservationsCfg:
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
 
-        # Visual observations (replaces ground truth object_position)
-        visual_features = ObsTerm(func=visual_object_features)
+        # OPTION A: Vision-based (no ground truth) - DISABLED
+        # Uses visual_features from camera to locate object
+        # More realistic for sim-to-real transfer
+        # visual_features = ObsTerm(func=visual_object_features)
+
+        # OPTION B: Ground truth (privileged info) - ENABLED
+        # Uses perfect knowledge from simulator
+        # Faster to train but won't transfer to real robot
+        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        object_orientation = ObsTerm(func=object_orientation_in_robot_root_frame)
 
         # Task command
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         actions = ObsTerm(func=mdp.last_action)
-
-        # OPTION A: Vision-based (no ground truth)
-        # Uses visual_features from camera to locate object
-        # More realistic for sim-to-real transfer
-
-        # OPTION B: Ground truth (uncomment below, comment visual_features above)
-        # object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
-        # Uses perfect knowledge from simulator
-        # Faster to train but won't transfer to real robot
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -403,25 +305,86 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
+    # === Standard rewards (from IsaacLab) ===
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
 
-    # lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
-    # lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.15}, weight=15.0) # tin cad 
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.4}, weight=15.0) # tetra cad
+    # # Object heights (scaled 0.8x):
+    # #   - Tin Can:    ~0.11m (smallest)
+    # #   - Tetra Pak:  ~0.20m
+    # #   - Chips Bag:  ~0.27m
+    # # Use 0.06m as minimal_height (works for all objects - about half of smallest object height)
+    # lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.06}, weight=15.0)
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose"},
+        params={"std": 0.3, "minimal_height": 0.06, "command_name": "object_pose"},
         weight=16.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
+        params={"std": 0.05, "minimal_height": 0.06, "command_name": "object_pose"},
         weight=5.0,
     )
 
-    # action penalty
+    # # === Custom height-based rewards (similar to MetaIsaacGrasp) ===
+    # # Dense reward proportional to object height when gripper is close
+    # # Similar to MetaIsaacGrasp's obj_height_reward but without state machine
+    # height_reward = RewTerm(
+    #     func=object_height_reward,
+    #     params={"max_height": 0.5, "proximity_threshold": 0.1},
+    #     weight=10.0,
+    # )
+
+    # Progress toward target lift height
+    # lift_progress = RewTerm(
+    #     func=object_lift_progress_reward,
+    #     params={"target_height": 0.3},
+    #     weight=5.0,
+    # )
+
+    # === Finger contact rewards (for stable grasping) ===
+    # Reward when BOTH fingers are in contact with object (key for stable grasps!)
+    both_fingers_contact = RewTerm(
+        func=both_fingers_contact_reward,
+        params={"contact_threshold": 0.05},
+        weight=5.0,
+    )
+
+    # Reward for symmetric finger positioning around object
+    symmetric_grasp = RewTerm(
+        func=symmetric_grasp_reward,
+        params={"contact_threshold": 0.08},
+        weight=2.0,
+    )
+
+    # Reward for appropriate gripper closure when near object
+    # grasp_force = RewTerm(
+    #     func=grasp_force_reward,
+    #     params={"min_closure": 0.01, "max_closure": 0.04},
+    #     weight=1.0,
+    # )
+
+    # === Custom grasp quality rewards ===
+    # Penalize object rotation during grasp (encourages stable grasps)
+    # object_rotation = RewTerm(func=object_rotation_penalty, weight=-0.5)
+
+    # Penalize object XY translation during grasp (encourages centered grasps)
+    # object_translation = RewTerm(func=object_translation_penalty, weight=-0.5)
+
+    # Penalize asymmetric finger contacts (encourages symmetric grasps)
+    # asymmetric_contact = RewTerm(func=asymmetric_finger_contact_penalty, weight=-0.3)
+
+    # Reward for centering object between fingers
+    # centered_grasp = RewTerm(func=centered_grasp_reward, params={"threshold": 0.02}, weight=2.0)
+
+    # Reward for stable grasps (low object velocity)
+    # grasp_stability = RewTerm(func=grasp_stability_reward, weight=1.0)
+
+    # Reward for optimal finger-object distance
+    # finger_proximity = RewTerm(func=finger_object_proximity_reward, params={"optimal_distance": 0.02}, weight=1.0)
+
+    # === Action penalties ===
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(
@@ -465,7 +428,7 @@ class UR10LiftEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the lifting environment."""
 
     # Scene settings
-    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=4096, env_spacing=2.5)
+    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=False)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()

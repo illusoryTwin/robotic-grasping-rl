@@ -3,30 +3,85 @@
 This script loads a trained policy and visualizes it in the simulation.
 
 Usage:
-    # Play with a trained checkpoint
+    # Play with the latest checkpoint (auto-detected)
+    python scripts/play_ur10_lift.py --task Isaac-Lift-UR10-v0
+
+    # Play with a specific checkpoint
     python scripts/play_ur10_lift.py --task Isaac-Lift-UR10-v0 --checkpoint /path/to/model.pt
 
     # Play with custom number of environments
-    python scripts/play_ur10_lift.py --task Isaac-Lift-UR10-v0 --checkpoint /path/to/model.pt --num_envs 32
+    python scripts/play_ur10_lift.py --task Isaac-Lift-UR10-v0 --num_envs 32
 """
 
 import argparse
 import sys
 import os
+import glob
 from pathlib import Path
 
 # Add the manipulation_rl_new directory to Python path
 MANIP_RL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(MANIP_RL_DIR))
 
+# Default logs directory
+LOGS_DIR = MANIP_RL_DIR / "logs" / "rsl_rl" / "ur10_lift"
+
+
+def find_latest_checkpoint(logs_dir: Path = LOGS_DIR) -> Path:
+    """Find the latest checkpoint from the most recent training run.
+    
+    Args:
+        logs_dir: Directory containing training runs.
+        
+    Returns:
+        Path to the latest checkpoint file.
+        
+    Raises:
+        FileNotFoundError: If no checkpoints are found.
+    """
+    if not logs_dir.exists():
+        raise FileNotFoundError(f"Logs directory not found: {logs_dir}")
+    
+    # Get all run directories sorted by name (timestamp)
+    run_dirs = sorted(logs_dir.glob("*/"), key=lambda x: x.name, reverse=True)
+    
+    if not run_dirs:
+        raise FileNotFoundError(f"No training runs found in: {logs_dir}")
+    
+    # Search through runs starting from the most recent
+    for run_dir in run_dirs:
+        # Find all model checkpoints in this run
+        model_files = list(run_dir.glob("model_*.pt"))
+        
+        if model_files:
+            # Sort by iteration number (model_0.pt, model_50.pt, model_100.pt, ...)
+            def get_iteration(f):
+                try:
+                    return int(f.stem.split("_")[1])
+                except (IndexError, ValueError):
+                    return -1
+            
+            model_files.sort(key=get_iteration, reverse=True)
+            latest_model = model_files[0]
+            
+            print(f"[INFO] Auto-detected latest checkpoint:")
+            print(f"       Run: {run_dir.name}")
+            print(f"       Model: {latest_model.name}")
+            
+            return latest_model
+    
+    raise FileNotFoundError(f"No model checkpoints (model_*.pt) found in any run under: {logs_dir}")
+
+
 from isaaclab.app import AppLauncher
 
 # Add argparse arguments
 parser = argparse.ArgumentParser(description="Play UR10 lift task with trained RSL-RL PPO policy")
 parser.add_argument("--task", type=str, default="Isaac-Lift-UR10-v0", help="Name of the task.")
-parser.add_argument("--checkpoint", type=str, required=True, help="Path to the trained model checkpoint (.pt file)")
+parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint (.pt). If not provided, uses latest.")
 parser.add_argument("--num_envs", type=int, default=4, help="Number of environments to simulate.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
+parser.add_argument("--run", type=str, default=None, help="Specific run directory name (e.g., '2025-12-16_22-35-35')")
 AppLauncher.add_app_launcher_args(parser)
 
 # Parse args
@@ -96,10 +151,29 @@ def main():
 
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
 
-    # Check if checkpoint exists
-    checkpoint_path = Path(args_cli.checkpoint)
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+    # Find checkpoint path
+    if args_cli.checkpoint is not None:
+        # Use provided checkpoint
+        checkpoint_path = Path(args_cli.checkpoint)
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+    elif args_cli.run is not None:
+        # Use specific run directory
+        run_dir = LOGS_DIR / args_cli.run
+        if not run_dir.exists():
+            raise FileNotFoundError(f"Run directory not found: {run_dir}")
+        checkpoint_path = find_latest_checkpoint(run_dir.parent)
+        # Filter to only this run
+        model_files = sorted(run_dir.glob("model_*.pt"), 
+                           key=lambda f: int(f.stem.split("_")[1]) if f.stem.split("_")[1].isdigit() else -1,
+                           reverse=True)
+        if not model_files:
+            raise FileNotFoundError(f"No checkpoints in run: {run_dir}")
+        checkpoint_path = model_files[0]
+        print(f"[INFO] Using run: {args_cli.run}")
+    else:
+        # Auto-detect latest checkpoint
+        checkpoint_path = find_latest_checkpoint()
 
     print(f"[INFO] Loading checkpoint from: {checkpoint_path}")
 
