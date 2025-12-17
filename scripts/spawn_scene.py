@@ -12,7 +12,7 @@ import argparse
 import sys
 from pathlib import Path
 
-# Add the manipulation_rl_new directory to Python path
+# Add the robotic-grasping-rl directory to Python path
 MANIP_RL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(MANIP_RL_DIR))
 
@@ -51,7 +51,7 @@ sys.path.insert(0, str(MANIP_RL_DIR))
 from assets import UR10_WITH_GRIPPER_CFG
 
 # Objects directory
-OBJECTS_DIR = os.path.join(str(Path.home()), "Workspace/manipulation_rl_new/objects")
+OBJECTS_DIR = os.path.join(str(Path.home()), "Workspace/robotic-grasping-rl/objects")
 
 
 @configclass

@@ -87,7 +87,7 @@ MODALITIES = {
 }
 
 # Object paths (defined outside class to avoid being treated as asset config)
-OBJECTS_DIR = os.path.join(str(Path.home()), "Workspace/manipulation_rl_new/objects")
+OBJECTS_DIR = os.path.join(str(Path.home()), "Workspace/robotic-grasping-rl/objects")
 
 
 @configclass
@@ -220,7 +220,7 @@ class ActionsCfg:
     arm_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=["shoulder_.*", "elbow_joint", "wrist_.*"],
-        scale=0.2,  # Reduced from 0.5 to reduce shaking
+        scale=0.5,
         use_default_offset=True,
     )
     # Hand-E gripper (parallel jaw gripper)
@@ -296,6 +296,27 @@ class EventCfg:
         },
     )
 
+    reset_robot_joints = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": (-0.6, 0.6),
+            "velocity_range": (0.0, 0.0),
+            "asset_cfg": SceneEntityCfg("robot", joint_names=["shoulder_.*", "elbow_joint"]), #, "wrist_.*"]),
+        },
+    )
+
+
+    # reset_robot_joints = EventTerm(
+    #     func=mdp.reset_joints_by_offset,
+    #     mode="reset",
+    #     params={
+    #         "position_range": (-1.6, 1.6),
+    #         "velocity_range": (0.0, 0.0),
+    #         "asset_cfg": SceneEntityCfg("robot", joint_names=["wrist_.*"]),
+    #     },
+    # )
+
 
 @configclass
 class RewardsCfg:
@@ -352,19 +373,19 @@ class RewardsCfg:
 
     # === Action penalties (STRONGER to reduce shaking) ===
     # Penalize rapid action changes (key for smooth motion!)
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.1)
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-5)
 
     # Penalize high joint velocities
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
-        weight=-0.01,
+        weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     
     # Penalize joint accelerations (reduces jerkiness)
     joint_acc = RewTerm(
         func=mdp.joint_acc_l2,
-        weight=-1e-5,
+        weight=-1e-6,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 

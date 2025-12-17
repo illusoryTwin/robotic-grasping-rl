@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-# Add the manipulation_rl_new directory to Python path
+# Add the robotic-grasping-rl directory to Python path
 MANIP_RL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(MANIP_RL_DIR))
 
