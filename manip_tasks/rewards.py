@@ -436,3 +436,130 @@ def grasp_force_reward(
     
     return reward
 
+
+# =============================================================================
+# MetaIsaacGrasp-style Rewards
+# =============================================================================
+
+def grasp_success_reward(
+    env: ManagerBasedRLEnv,
+    lift_height_threshold: float = 0.15,
+) -> torch.Tensor:
+    """Sparse reward when object is successfully lifted (MetaIsaacGrasp style).
+    
+    Args:
+        env: The environment instance.
+        lift_height_threshold: Height above table to consider success (default 15cm).
+        
+    Returns:
+        1.0 if object is lifted, 0.0 otherwise (num_envs,).
+    """
+    obj = env.scene["object"]
+    robot = env.scene["robot"]
+    
+    # Get object height relative to robot base (approximate table height)
+    obj_height = obj.data.root_pos_w[:, 2]
+    robot_base_height = robot.data.root_pos_w[:, 2]
+    relative_height = obj_height - robot_base_height
+    
+    # Success if object is above threshold
+    success = (relative_height > lift_height_threshold).float()
+    
+    return success
+
+
+def gripper_distance_reward(
+    env: ManagerBasedRLEnv,
+    alpha: float = 8.0,
+) -> torch.Tensor:
+    """Dense reward based on gripper-to-object distance (MetaIsaacGrasp style).
+    
+    Uses exponential decay: reward = exp(-alpha * distance)
+    This encourages the gripper to get closer to the object.
+    
+    Args:
+        env: The environment instance.
+        alpha: Decay rate (higher = sharper falloff). Default 8.0.
+        
+    Returns:
+        Reward in range [0, 1] where 1 = touching object (num_envs,).
+    """
+    obj = env.scene["object"]
+    
+    # Get gripper position (end-effector)
+    ee_frame = env.scene["ee_frame"]
+    gripper_pos = ee_frame.data.target_pos_w[..., 0, :]  # [num_envs, 3]
+    
+    # Get object position
+    obj_pos = obj.data.root_pos_w[:, :3]
+    
+    # Compute distance
+    distance = torch.norm(gripper_pos - obj_pos, dim=-1)
+    
+    # Exponential reward
+    reward = torch.exp(-alpha * distance)
+    
+    return reward
+
+
+def object_height_dense_reward(
+    env: ManagerBasedRLEnv,
+    max_height: float = 0.4,
+    proximity_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Dense reward proportional to object height when gripper is close (MetaIsaacGrasp style).
+    
+    The reward equals the object height when:
+    1. Height is in valid range (0, max_height)
+    2. Gripper is close to object (< proximity_threshold)
+    3. Gripper is above ground
+    
+    This is the KEY reward in MetaIsaacGrasp (weight=1000).
+    
+    Args:
+        env: The environment instance.
+        max_height: Maximum height for valid reward (default 0.4m).
+        proximity_threshold: Max gripper-object distance for reward (default 0.1m).
+        
+    Returns:
+        Object height if conditions met, 0 otherwise (num_envs,).
+    """
+    obj = env.scene["object"]
+    robot = env.scene["robot"]
+    
+    # Get object height relative to robot base
+    obj_height = obj.data.root_pos_w[:, 2]
+    robot_base_height = robot.data.root_pos_w[:, 2]
+    relative_height = obj_height - robot_base_height
+    
+    # Get gripper position
+    ee_frame = env.scene["ee_frame"]
+    gripper_pos = ee_frame.data.target_pos_w[..., 0, :]
+    gripper_height = gripper_pos[:, 2] - robot_base_height
+    
+    # Get object position
+    obj_pos = obj.data.root_pos_w[:, :3]
+    
+    # Compute distance to object
+    distance = torch.norm(gripper_pos - obj_pos, dim=-1)
+    
+    # Conditions (MetaIsaacGrasp style)
+    condition1 = (relative_height > 0) & (relative_height < max_height)  # Valid height range
+    condition2 = distance < proximity_threshold  # Gripper close to object
+    condition3 = gripper_height > 0  # Gripper above ground
+    
+    # Reward = height when all conditions met
+    all_conditions = condition1 & condition2 & condition3
+    reward = torch.where(all_conditions, relative_height, torch.zeros_like(relative_height))
+    
+    return reward
+
+
+def time_penalty_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Small constant penalty per step to encourage faster grasping (MetaIsaacGrasp style).
+    
+    Returns:
+        Constant penalty value (num_envs,).
+    """
+    return torch.full((env.num_envs,), 0.05, device=env.device)
+

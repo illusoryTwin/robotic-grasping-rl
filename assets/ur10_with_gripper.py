@@ -45,7 +45,7 @@ UR10_WITH_GRIPPER_CFG = ArticulationCfg(
             velocity_limit=100.0,
             effort_limit=87.0,
             stiffness=800.0,
-            damping=40.0,
+            damping=80.0,  # Increased from 40 to reduce oscillation
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=[".*finger.*"],

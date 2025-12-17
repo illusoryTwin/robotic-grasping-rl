@@ -39,7 +39,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-# Import robot configuration from assets
+# Import robot configuration from custom assets (UR10 with Hand-E gripper)
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from assets import UR10_WITH_GRIPPER_CFG
@@ -52,8 +52,14 @@ from manip_tasks.observations import (
     visual_object_features,
 )
 
-# Import custom reward functions
+# Import custom reward functions (MetaIsaacGrasp style)
 from manip_tasks.rewards import (
+    # MetaIsaacGrasp-style rewards
+    grasp_success_reward,
+    gripper_distance_reward,
+    object_height_dense_reward,
+    time_penalty_reward,
+    # Legacy rewards (kept for reference)
     object_rotation_penalty,
     object_translation_penalty,
     asymmetric_finger_contact_penalty,
@@ -91,32 +97,21 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     which need to set the target object, robot and end-effector frames
     """
 
-    # Set UR10 as robot
+    # Set UR10 with Hand-E gripper (custom USD)
     robot = UR10_WITH_GRIPPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-    # Multi-object configuration: randomly spawns one of three objects per environment
+    # Single object: Tin Can only
+    # Rotation: 90° around X-axis to stand upright (quat = [w, x, y, z])
+    # cos(45°) ≈ 0.7071, sin(45°) ≈ 0.7071
     object = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Object",
-        init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
-        spawn=sim_utils.MultiAssetSpawnerCfg(
-            assets_cfg=[
-                # Tetra Pak (height ~0.2m scaled)
-                UsdFileCfg(
-                    usd_path=os.path.join(OBJECTS_DIR, "tetra-pak-carton.usd"),
-                    scale=(0.8, 0.8, 0.8),
-                ),
-                # Tin Can (height ~0.11m scaled)
-                UsdFileCfg(
-                    usd_path=os.path.join(OBJECTS_DIR, "tin-can.usd"),
-                    scale=(0.8, 0.8, 0.8),
-                ),
-                # Chips Bag (height ~0.27m scaled)
-                UsdFileCfg(
-                    usd_path=os.path.join(OBJECTS_DIR, "chips-bag.usd"),
-                    scale=(0.8, 0.8, 0.8),
-                ),
-            ],
-            random_choice=False,  # Cycle through objects: env_idx % num_objects
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=[0.5, 0, 0.055],
+            rot=[0.7071, 0.7071, 0, 0],  # 90° rotation around X-axis to stand upright
+        ),
+        spawn=UsdFileCfg(
+            usd_path=os.path.join(OBJECTS_DIR, "tin-can.usd"),
+            # scale=(0.8, 0.8, 0.8),
             rigid_props=RigidBodyPropertiesCfg(
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=1,
@@ -130,7 +125,7 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     )
 
 
-    # Frame transformer for end-effector tracking
+    # Frame transformer for end-effector tracking (Hand-E gripper)
     ee_frame = FrameTransformerCfg(
         prim_path="{ENV_REGEX_NS}/Robot/base_link",
         debug_vis=False,
@@ -140,7 +135,7 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
                 prim_path="{ENV_REGEX_NS}/Robot/hande_end",
                 name="end_effector",
                 offset=OffsetCfg(
-                    pos=[0.0, 0.0, 0.0],  # hande_end is already at gripper tip
+                    pos=[0.0, 0.0, 0.0],  # hande_end is at gripper tip
                 ),
             ),
         ],
@@ -203,7 +198,7 @@ class CommandsCfg:
 
     object_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
-        body_name="hande_end",  # End-effector frame (gripper tip)
+        body_name="hande_end",  # Hand-E gripper tip
         resampling_time_range=(5.0, 5.0),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
@@ -221,18 +216,19 @@ class CommandsCfg:
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    # Set actions for UR10
+    # Set actions for UR10 (reduced scale for smoother motion)
     arm_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=["shoulder_.*", "elbow_joint", "wrist_.*"],
-        scale=0.5,
+        scale=0.2,  # Reduced from 0.5 to reduce shaking
         use_default_offset=True,
     )
+    # Hand-E gripper (parallel jaw gripper)
     gripper_action = mdp.BinaryJointPositionActionCfg(
         asset_name="robot",
         joint_names=[".*finger.*"],
         open_command_expr={".*finger.*": 0.0425},  # Open gripper
-        close_command_expr={".*finger.*": 0.0},  # Close gripper
+        close_command_expr={".*finger.*": 0.0},    # Close gripper
     )
 
 
@@ -303,93 +299,72 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    """Reward terms for the MDP."""
+    """Reward terms for the MDP (MetaIsaacGrasp style)."""
 
-    # === Standard rewards (from IsaacLab) ===
+    # === MetaIsaacGrasp-style rewards ===
+    
+    # # Sparse success reward: +1 when object is lifted above threshold
+    # grasp_success = RewTerm(
+    #     func=grasp_success_reward,
+    #     params={"lift_height_threshold": 0.15},
+    #     weight=5.0,
+    # )
+    
+    # # Dense reward: exponential decay based on gripper-object distance
+    # # Encourages getting closer to object
+    # gripper_distance = RewTerm(
+    #     func=gripper_distance_reward,
+    #     params={"alpha": 8.0},
+    #     weight=1.0,
+    # )
+    
+    # # # Dense reward: object height when gripper is close (KEY reward!)
+    # # # This is the most important reward in MetaIsaacGrasp (weight=1000)
+    # # height_reward = RewTerm(
+    # #     func=object_height_dense_reward,
+    # #     params={"max_height": 0.4, "proximity_threshold": 0.1},
+    # #     weight=100.0,
+    # # )
+    
+    # # # Time penalty: small constant penalty per step
+    # # # Encourages faster grasping
+    # # time_penalty = RewTerm(
+    # #     func=time_penalty_reward,
+    # #     weight=-1.0,
+    # # )
+    
+    # ==========================
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
 
-    # # Object heights (scaled 0.8x):
-    # #   - Tin Can:    ~0.11m (smallest)
-    # #   - Tetra Pak:  ~0.20m
-    # #   - Chips Bag:  ~0.27m
-    # # Use 0.06m as minimal_height (works for all objects - about half of smallest object height)
-    # lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.06}, weight=15.0)
+    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.06, "command_name": "object_pose"},
+        params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose"},
         weight=16.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.06, "command_name": "object_pose"},
+        params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
         weight=5.0,
     )
 
-    # # === Custom height-based rewards (similar to MetaIsaacGrasp) ===
-    # # Dense reward proportional to object height when gripper is close
-    # # Similar to MetaIsaacGrasp's obj_height_reward but without state machine
-    # height_reward = RewTerm(
-    #     func=object_height_reward,
-    #     params={"max_height": 0.5, "proximity_threshold": 0.1},
-    #     weight=10.0,
-    # )
+    # === Action penalties (STRONGER to reduce shaking) ===
+    # Penalize rapid action changes (key for smooth motion!)
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.1)
 
-    # Progress toward target lift height
-    # lift_progress = RewTerm(
-    #     func=object_lift_progress_reward,
-    #     params={"target_height": 0.3},
-    #     weight=5.0,
-    # )
-
-    # === Finger contact rewards (for stable grasping) ===
-    # Reward when BOTH fingers are in contact with object (key for stable grasps!)
-    both_fingers_contact = RewTerm(
-        func=both_fingers_contact_reward,
-        params={"contact_threshold": 0.05},
-        weight=5.0,
-    )
-
-    # Reward for symmetric finger positioning around object
-    symmetric_grasp = RewTerm(
-        func=symmetric_grasp_reward,
-        params={"contact_threshold": 0.08},
-        weight=2.0,
-    )
-
-    # Reward for appropriate gripper closure when near object
-    # grasp_force = RewTerm(
-    #     func=grasp_force_reward,
-    #     params={"min_closure": 0.01, "max_closure": 0.04},
-    #     weight=1.0,
-    # )
-
-    # === Custom grasp quality rewards ===
-    # Penalize object rotation during grasp (encourages stable grasps)
-    # object_rotation = RewTerm(func=object_rotation_penalty, weight=-0.5)
-
-    # Penalize object XY translation during grasp (encourages centered grasps)
-    # object_translation = RewTerm(func=object_translation_penalty, weight=-0.5)
-
-    # Penalize asymmetric finger contacts (encourages symmetric grasps)
-    # asymmetric_contact = RewTerm(func=asymmetric_finger_contact_penalty, weight=-0.3)
-
-    # Reward for centering object between fingers
-    # centered_grasp = RewTerm(func=centered_grasp_reward, params={"threshold": 0.02}, weight=2.0)
-
-    # Reward for stable grasps (low object velocity)
-    # grasp_stability = RewTerm(func=grasp_stability_reward, weight=1.0)
-
-    # Reward for optimal finger-object distance
-    # finger_proximity = RewTerm(func=finger_object_proximity_reward, params={"optimal_distance": 0.02}, weight=1.0)
-
-    # === Action penalties ===
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
-
+    # Penalize high joint velocities
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
-        weight=-1e-4,
+        weight=-0.01,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+    
+    # Penalize joint accelerations (reduces jerkiness)
+    joint_acc = RewTerm(
+        func=mdp.joint_acc_l2,
+        weight=-1e-5,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
@@ -427,8 +402,8 @@ class CurriculumCfg:
 class UR10LiftEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the lifting environment."""
 
-    # Scene settings
-    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=False)
+    # Scene settings (replicate_physics=True since using single object type)
+    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
