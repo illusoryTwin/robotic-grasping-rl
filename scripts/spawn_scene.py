@@ -59,7 +59,23 @@ class SpawnSceneCfg(InteractiveSceneCfg):
     """Configuration for the visualization scene with robot and all objects."""
 
     # UR10 with Hand-E gripper
-    robot = UR10_WITH_GRIPPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot = UR10_WITH_GRIPPER_CFG.replace(
+        prim_path="{ENV_REGEX_NS}/Robot",
+        init_state=ArticulationCfg.InitialStateCfg(
+            pos=(0.0, 0.0, 0.0),
+            rot=(1.0, 0.0, 0.0, 0.0),
+            joint_pos={
+                "shoulder_pan_joint": 0.0,
+                "shoulder_lift_joint": -1.712,
+                "elbow_joint": 1.712,
+                "wrist_1_joint": 0.0,
+                "wrist_2_joint": 0.0,
+                "wrist_3_joint": 0.0,
+                "hande_left_finger_joint": 0.0,  # Gripper open
+                "hande_right_finger_joint": 0.0,  # Gripper open
+            },
+        ),
+    )
 
     # Tin Can
     tin_can = RigidObjectCfg(
@@ -128,7 +144,15 @@ class SpawnSceneCfg(InteractiveSceneCfg):
     ee_frame = FrameTransformerCfg(
         prim_path="{ENV_REGEX_NS}/Robot/base_link",
         debug_vis=True,  # Show EE frame visualization
-        visualizer_cfg=FRAME_MARKER_CFG.replace(prim_path="/Visuals/FrameTransformer"),
+        visualizer_cfg=FRAME_MARKER_CFG.replace(
+            prim_path="/Visuals/FrameTransformer",
+            markers={
+                "frame": sim_utils.UsdFileCfg(
+                    usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
+                    scale=(0.1, 0.1, 0.1),  # Smaller frame markers
+                ),
+            },
+        ),
         target_frames=[
             FrameTransformerCfg.FrameCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/hande_end",
