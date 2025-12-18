@@ -5,12 +5,13 @@ This script creates a scene with the UR10e robot and all three objects
 
 Usage:
     python scripts/spawn_scene.py
-    python scripts/spawn_scene.py --num_envs 3  # One env per object
+    python scripts/spawn_scene.py --num_envs 3
 """
 
 import argparse
 import sys
 from pathlib import Path
+import os
 
 # Add the robotic-grasping-rl directory to Python path
 MANIP_RL_DIR = Path(__file__).resolve().parent.parent
@@ -26,13 +27,9 @@ AppLauncher.add_app_launcher_args(parser)
 # Parse args
 args_cli = parser.parse_args()
 
-# Launch omniverse app (with rendering enabled for visualization)
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
-# Import after launching the app
-import torch
-import os
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
@@ -71,8 +68,8 @@ class SpawnSceneCfg(InteractiveSceneCfg):
                 "wrist_1_joint": 0.0,
                 "wrist_2_joint": 0.0,
                 "wrist_3_joint": 0.0,
-                "hande_left_finger_joint": 0.0,  # Gripper open
-                "hande_right_finger_joint": 0.0,  # Gripper open
+                "hande_left_finger_joint": 0.0,
+                "hande_right_finger_joint": 0.0,
             },
         ),
     )

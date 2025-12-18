@@ -1,7 +1,6 @@
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
-# All rights reserved.
+# Copyright (c) 2025 Ekaterina Mozhegova
 #
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: MIT
 
 """Custom observation functions for UR10 lift task."""
 

@@ -5,13 +5,14 @@
 
 """UR10 robot with Hand-E gripper configuration."""
 
+import os
 from isaaclab.assets import ArticulationCfg
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 
 
-"""UR10e robot arm with Robotiq Hand-E gripper and camera mount.
+"""UR10 manipulator with a gripper and camera mount.
 
 This configuration defines a UR10e manipulator with:
 - 6-DOF arm with implicit PD control
@@ -20,7 +21,7 @@ This configuration defines a UR10e manipulator with:
 """
 UR10_WITH_GRIPPER_CFG = ArticulationCfg(
     spawn=UsdFileCfg(
-        usd_path="/home/ekaterina-mozhegova/Workspace/manipulation_rl/assets/ur10e_with_hand_e_and_camera_mount.usd",
+        usd_path=os.path.join(os.path.dirname(__file__), "ur10e_with_hand_e_and_camera_mount.usd"),
         activate_contact_sensors=False,
         rigid_props=RigidBodyPropertiesCfg(
             disable_gravity=False,
@@ -45,7 +46,7 @@ UR10_WITH_GRIPPER_CFG = ArticulationCfg(
             velocity_limit=100.0,
             effort_limit=87.0,
             stiffness=800.0,
-            damping=80.0,  # Increased from 40 to reduce oscillation
+            damping=40.0,
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=[".*finger.*"],

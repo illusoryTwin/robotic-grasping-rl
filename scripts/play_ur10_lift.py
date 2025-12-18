@@ -29,22 +29,12 @@ LOGS_DIR = MANIP_RL_DIR / "logs" / "rsl_rl" / "ur10_lift"
 
 def find_latest_checkpoint(logs_dir: Path = LOGS_DIR) -> Path:
     """Find the latest checkpoint from the most recent training run.
-    
-    Args:
-        logs_dir: Directory containing training runs.
-        
     Returns:
         Path to the latest checkpoint file.
-        
-    Raises:
-        FileNotFoundError: If no checkpoints are found.
     """
     if not logs_dir.exists():
         raise FileNotFoundError(f"Logs directory not found: {logs_dir}")
-    
-    # Get all run directories sorted by name (timestamp)
     run_dirs = sorted(logs_dir.glob("*/"), key=lambda x: x.name, reverse=True)
-    
     if not run_dirs:
         raise FileNotFoundError(f"No training runs found in: {logs_dir}")
     
@@ -115,8 +105,6 @@ torch.backends.cudnn.benchmark = False
 
 
 def main():
-    """Main play function."""
-
     # Parse environment configuration
     env_cfg: ManagerBasedRLEnvCfg = parse_env_cfg(
         args_cli.task,
@@ -224,12 +212,10 @@ def main():
     except KeyboardInterrupt:
         print(f"\n[INFO] Visualization stopped by user")
 
-    # Close environment
     env.close()
 
 
 if __name__ == "__main__":
-    # Run play
     try:
         main()
     except Exception as e:

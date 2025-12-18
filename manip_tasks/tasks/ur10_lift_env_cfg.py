@@ -1,7 +1,6 @@
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
-# All rights reserved.
+# Copyright (c) 2025 Ekaterina Mozhegova
 #
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: MIT
 
 from dataclasses import MISSING
 
@@ -52,27 +51,6 @@ from manip_tasks.observations import (
     visual_object_features,
 )
 
-# Import custom reward functions (MetaIsaacGrasp style)
-from manip_tasks.rewards import (
-    # MetaIsaacGrasp-style rewards
-    grasp_success_reward,
-    gripper_distance_reward,
-    object_height_dense_reward,
-    time_penalty_reward,
-    # Legacy rewards (kept for reference)
-    object_rotation_penalty,
-    object_translation_penalty,
-    asymmetric_finger_contact_penalty,
-    centered_grasp_reward,
-    grasp_stability_reward,
-    finger_object_proximity_reward,
-    object_height_reward,
-    object_lift_progress_reward,
-    both_fingers_contact_reward,
-    symmetric_grasp_reward,
-    grasp_force_reward,
-)
-
 ##
 # Scene definition
 ##
@@ -97,12 +75,9 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     which need to set the target object, robot and end-effector frames
     """
 
-    # Set UR10 with Hand-E gripper (custom USD)
+    # Set UR10 with Hand-E gripper
     robot = UR10_WITH_GRIPPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-    # Single object: Tin Can only
-    # Rotation: 90° around X-axis to stand upright (quat = [w, x, y, z])
-    # cos(45°) ≈ 0.7071, sin(45°) ≈ 0.7071
     object = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Object",
         init_state=RigidObjectCfg.InitialStateCfg(
@@ -135,7 +110,7 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
                 prim_path="{ENV_REGEX_NS}/Robot/hande_end",
                 name="end_effector",
                 offset=OffsetCfg(
-                    pos=[0.0, 0.0, 0.0],  # hande_end is at gripper tip
+                    pos=[0.0, 0.0, 0.0], # hande_end is at gripper tip
                 ),
             ),
         ],
@@ -163,27 +138,27 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
 
     # Camera disabled for faster training with privileged info
     # Uncomment to enable vision-based training
-    # wrist_camera = CameraCfg(
-    #     prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/wrist_camera",
-    #     update_period=0.001,
-    #     height=480,
-    #     width=640,
-    #     data_types=[*MODALITIES],
-    #     colorize_instance_id_segmentation=False,
-    #     colorize_semantic_segmentation=False,
-    #     colorize_instance_segmentation=False,
-    #     spawn=sim_utils.PinholeCameraCfg(
-    #         focal_length=24.0,
-    #         focus_distance=400.0,
-    #         horizontal_aperture=20.955,
-    #         clipping_range=(0.01, 1e5),
-    #     ),
-    #     offset=CameraCfg.OffsetCfg(
-    #         pos=(0.1, 0.1, 0.1), 
-    #         rot=(0.1, 0.1, 0.1, 0.1), 
-    #         convention="ros",
-    #     ),
-    # )
+    wrist_camera = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/wrist_camera",
+        update_period=0.001,
+        height=480,
+        width=640,
+        data_types=[*MODALITIES],
+        colorize_instance_id_segmentation=False,
+        colorize_semantic_segmentation=False,
+        colorize_instance_segmentation=False,
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.01, 1e5),
+        ),
+        offset=CameraCfg.OffsetCfg(
+            pos=(0.1, 0.1, 0.1), 
+            rot=(0.1, 0.1, 0.1, 0.1), 
+            convention="ros",
+        ),
+    )
 
 
 
@@ -216,7 +191,7 @@ class CommandsCfg:
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    # Set actions for UR10 (reduced scale for smoother motion)
+    # Set actions for UR10
     arm_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=["shoulder_.*", "elbow_joint", "wrist_.*"],
@@ -245,16 +220,12 @@ class ObservationsCfg:
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
 
-        # OPTION A: Vision-based (no ground truth) - DISABLED
-        # Uses visual_features from camera to locate object
-        # More realistic for sim-to-real transfer
-        # visual_features = ObsTerm(func=visual_object_features)
+        # OPTION A: Vision-based (no ground truth)
+        visual_features = ObsTerm(func=visual_object_features)
 
-        # OPTION B: Ground truth (privileged info) - ENABLED
-        # Uses perfect knowledge from simulator
-        # Faster to train but won't transfer to real robot
-        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
-        object_orientation = ObsTerm(func=object_orientation_in_robot_root_frame)
+        # # OPTION B: Ground truth (privileged info)
+        # object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        # object_orientation = ObsTerm(func=object_orientation_in_robot_root_frame)
 
         # Task command
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
@@ -277,7 +248,7 @@ class ObservationsCfg:
 
     # observation groups
     policy: PolicyCfg = PolicyCfg()
-    # image: ImageCfg = ImageCfg()  # Disabled: not using vision-based policy
+    image: ImageCfg = ImageCfg()  # Disabled: not using vision-based policy
 
 
 @configclass
@@ -307,54 +278,8 @@ class EventCfg:
     )
 
 
-    # reset_robot_joints = EventTerm(
-    #     func=mdp.reset_joints_by_offset,
-    #     mode="reset",
-    #     params={
-    #         "position_range": (-1.6, 1.6),
-    #         "velocity_range": (0.0, 0.0),
-    #         "asset_cfg": SceneEntityCfg("robot", joint_names=["wrist_.*"]),
-    #     },
-    # )
-
-
 @configclass
 class RewardsCfg:
-    """Reward terms for the MDP (MetaIsaacGrasp style)."""
-
-    # === MetaIsaacGrasp-style rewards ===
-    
-    # # Sparse success reward: +1 when object is lifted above threshold
-    # grasp_success = RewTerm(
-    #     func=grasp_success_reward,
-    #     params={"lift_height_threshold": 0.15},
-    #     weight=5.0,
-    # )
-    
-    # # Dense reward: exponential decay based on gripper-object distance
-    # # Encourages getting closer to object
-    # gripper_distance = RewTerm(
-    #     func=gripper_distance_reward,
-    #     params={"alpha": 8.0},
-    #     weight=1.0,
-    # )
-    
-    # # # Dense reward: object height when gripper is close (KEY reward!)
-    # # # This is the most important reward in MetaIsaacGrasp (weight=1000)
-    # # height_reward = RewTerm(
-    # #     func=object_height_dense_reward,
-    # #     params={"max_height": 0.4, "proximity_threshold": 0.1},
-    # #     weight=100.0,
-    # # )
-    
-    # # # Time penalty: small constant penalty per step
-    # # # Encourages faster grasping
-    # # time_penalty = RewTerm(
-    # #     func=time_penalty_reward,
-    # #     weight=-1.0,
-    # # )
-    
-    # ==========================
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
 
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
@@ -371,18 +296,14 @@ class RewardsCfg:
         weight=5.0,
     )
 
-    # === Action penalties (STRONGER to reduce shaking) ===
-    # Penalize rapid action changes (key for smooth motion!)
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-5)
 
-    # Penalize high joint velocities
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     
-    # Penalize joint accelerations (reduces jerkiness)
     joint_acc = RewTerm(
         func=mdp.joint_acc_l2,
         weight=-1e-6,
@@ -392,7 +313,6 @@ class RewardsCfg:
 
 @configclass
 class TerminationsCfg:
-    """Termination terms for the MDP."""
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
@@ -403,7 +323,6 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    """Curriculum terms for the MDP."""
 
     action_rate = CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000}
