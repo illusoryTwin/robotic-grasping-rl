@@ -10,7 +10,7 @@ import torch
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from isaaclab.envs import ManagerBasedRLEnv
+    from omni.isaac.lab.envs import ManagerBasedRLEnv
 
 
 def object_orientation_in_robot_root_frame(env: ManagerBasedRLEnv) -> torch.Tensor:
@@ -19,7 +19,7 @@ def object_orientation_in_robot_root_frame(env: ManagerBasedRLEnv) -> torch.Tens
     Returns:
         Quaternion [qw, qx, qy, qz] of shape (num_envs, 4).
     """
-    from isaaclab.utils.math import subtract_frame_transforms
+    from omni.isaac.lab.utils.math import subtract_frame_transforms
     robot = env.scene["robot"]
     obj = env.scene["object"]
     object_pos_w = obj.data.root_pos_w[:, :3]

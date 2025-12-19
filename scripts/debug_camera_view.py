@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 MANIP_RL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(MANIP_RL_DIR))
 
-from isaaclab.app import AppLauncher
+from omni.isaac.lab.app import AppLauncher
 
 # Add argparse arguments
 parser = argparse.ArgumentParser(description="Debug camera visualization")
@@ -39,7 +39,7 @@ import numpy as np
 
 # Import custom tasks
 import manip_tasks  # noqa: F401
-from isaaclab_tasks.utils import parse_env_cfg
+from omni.isaac.lab_tasks.utils import parse_env_cfg
 
 def save_camera_images(env, timestep):
     """Save camera images to debug folder."""

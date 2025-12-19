@@ -4,32 +4,32 @@
 
 from dataclasses import MISSING
 
-import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg, DeformableObjectCfg, RigidObjectCfg
-from isaaclab.envs import ManagerBasedRLEnvCfg
-from isaaclab.managers import CurriculumTermCfg as CurrTerm
-from isaaclab.managers import EventTermCfg as EventTerm
-from isaaclab.managers import ObservationGroupCfg as ObsGroup
-from isaaclab.managers import ObservationTermCfg as ObsTerm
-from isaaclab.managers import RewardTermCfg as RewTerm
-from isaaclab.managers import SceneEntityCfg
-from isaaclab.managers import TerminationTermCfg as DoneTerm
-from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg
-from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
-from isaaclab.utils import configclass
-from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaaclab.assets import ArticulationCfg, RigidObjectCfg
-from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.sensors import FrameTransformerCfg, CameraCfg
-from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
-from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
-from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
-from isaaclab.utils import configclass
-from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaaclab_tasks.manager_based.manipulation.lift import mdp
-from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
-from isaaclab.markers.config import FRAME_MARKER_CFG, VisualizationMarkersCfg  # isort: skip
+import omni.isaac.lab.sim as sim_utils
+from omni.isaac.lab.assets import ArticulationCfg, AssetBaseCfg, DeformableObjectCfg, RigidObjectCfg
+from omni.isaac.lab.envs import ManagerBasedRLEnvCfg
+from omni.isaac.lab.managers import CurriculumTermCfg as CurrTerm
+from omni.isaac.lab.managers import EventTermCfg as EventTerm
+from omni.isaac.lab.managers import ObservationGroupCfg as ObsGroup
+from omni.isaac.lab.managers import ObservationTermCfg as ObsTerm
+from omni.isaac.lab.managers import RewardTermCfg as RewTerm
+from omni.isaac.lab.managers import SceneEntityCfg
+from omni.isaac.lab.managers import TerminationTermCfg as DoneTerm
+from omni.isaac.lab.scene import InteractiveSceneCfg
+from omni.isaac.lab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg
+from omni.isaac.lab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
+from omni.isaac.lab.utils import configclass
+from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
+from omni.isaac.lab.assets import ArticulationCfg, RigidObjectCfg
+from omni.isaac.lab.actuators import ImplicitActuatorCfg
+from omni.isaac.lab.sensors import FrameTransformerCfg, CameraCfg
+from omni.isaac.lab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
+from omni.isaac.lab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
+from omni.isaac.lab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
+from omni.isaac.lab.utils import configclass
+from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
+from omni.isaac.lab_tasks.manager_based.manipulation.lift import mdp
+from omni.isaac.lab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
+from omni.isaac.lab.markers.config import FRAME_MARKER_CFG, VisualizationMarkersCfg  # isort: skip
 
 
 import math
@@ -78,15 +78,33 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     # Set UR10 with Hand-E gripper
     robot = UR10_WITH_GRIPPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
+    # object = RigidObjectCfg(
+    #     prim_path="{ENV_REGEX_NS}/Object",
+    #     init_state=RigidObjectCfg.InitialStateCfg(
+    #         pos=[0.5, 0, 0.055],
+    #         rot=[0.7071, 0.7071, 0, 0],  # 90° rotation around X-axis to stand upright
+    #     ),
+    #     spawn=UsdFileCfg(
+    #         usd_path=os.path.join(OBJECTS_DIR, "tin-can.usd"),
+    #         # scale=(0.8, 0.8, 0.8),
+    #         rigid_props=RigidBodyPropertiesCfg(
+    #             solver_position_iteration_count=16,
+    #             solver_velocity_iteration_count=1,
+    #             max_angular_velocity=1000.0,
+    #             max_linear_velocity=1000.0,
+    #             max_depenetration_velocity=5.0,
+    #             disable_gravity=False,
+    #         ),
+    #         collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+    #     ),
+    # )
+
     object = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Object",
-        init_state=RigidObjectCfg.InitialStateCfg(
-            pos=[0.5, 0, 0.055],
-            rot=[0.7071, 0.7071, 0, 0],  # 90° rotation around X-axis to stand upright
-        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
         spawn=UsdFileCfg(
-            usd_path=os.path.join(OBJECTS_DIR, "tin-can.usd"),
-            # scale=(0.8, 0.8, 0.8),
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+            scale=(0.8, 0.8, 0.8),
             rigid_props=RigidBodyPropertiesCfg(
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=1,
@@ -95,7 +113,6 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
                 max_depenetration_velocity=5.0,
                 disable_gravity=False,
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
         ),
     )
 
@@ -138,27 +155,27 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
 
     # Camera disabled for faster training with privileged info
     # Uncomment to enable vision-based training
-    wrist_camera = CameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/wrist_camera",
-        update_period=0.001,
-        height=480,
-        width=640,
-        data_types=[*MODALITIES],
-        colorize_instance_id_segmentation=False,
-        colorize_semantic_segmentation=False,
-        colorize_instance_segmentation=False,
-        spawn=sim_utils.PinholeCameraCfg(
-            focal_length=24.0,
-            focus_distance=400.0,
-            horizontal_aperture=20.955,
-            clipping_range=(0.01, 1e5),
-        ),
-        offset=CameraCfg.OffsetCfg(
-            pos=(0.1, 0.1, 0.1), 
-            rot=(0.1, 0.1, 0.1, 0.1), 
-            convention="ros",
-        ),
-    )
+    # wrist_camera = CameraCfg(
+    #     prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/wrist_camera",
+    #     update_period=0.001,
+    #     height=480,
+    #     width=640,
+    #     data_types=[*MODALITIES],
+    #     colorize_instance_id_segmentation=False,
+    #     colorize_semantic_segmentation=False,
+    #     colorize_instance_segmentation=False,
+    #     spawn=sim_utils.PinholeCameraCfg(
+    #         focal_length=24.0,
+    #         focus_distance=400.0,
+    #         horizontal_aperture=20.955,
+    #         clipping_range=(0.01, 1e5),
+    #     ),
+    #     offset=CameraCfg.OffsetCfg(
+    #         pos=(0.1, 0.1, 0.1),
+    #         rot=(0.1, 0.1, 0.1, 0.1),
+    #         convention="ros",
+    #     ),
+    # )
 
 
 
@@ -220,12 +237,12 @@ class ObservationsCfg:
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
 
-        # OPTION A: Vision-based (no ground truth)
-        visual_features = ObsTerm(func=visual_object_features)
+        # # OPTION A: Vision-based (no ground truth)
+        # visual_features = ObsTerm(func=visual_object_features)
 
-        # # OPTION B: Ground truth (privileged info)
-        # object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
-        # object_orientation = ObsTerm(func=object_orientation_in_robot_root_frame)
+        # OPTION B: Ground truth (privileged info)
+        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        object_orientation = ObsTerm(func=object_orientation_in_robot_root_frame)
 
         # Task command
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
@@ -248,7 +265,7 @@ class ObservationsCfg:
 
     # observation groups
     policy: PolicyCfg = PolicyCfg()
-    image: ImageCfg = ImageCfg()  # Disabled: not using vision-based policy
+    # image: ImageCfg = ImageCfg()  # Disabled: not using vision-based policy
 
 
 @configclass

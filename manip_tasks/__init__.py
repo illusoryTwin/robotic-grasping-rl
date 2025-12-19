@@ -7,7 +7,7 @@ from .tasks.ur10_lift_env_cfg import UR10LiftEnvCfg
 # Register the UR10 lift environment
 gym.register(
     id="Isaac-Lift-UR10-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point="omni.isaac.lab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": UR10LiftEnvCfg,

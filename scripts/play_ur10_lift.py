@@ -63,7 +63,7 @@ def find_latest_checkpoint(logs_dir: Path = LOGS_DIR) -> Path:
     raise FileNotFoundError(f"No model checkpoints (model_*.pt) found in any run under: {logs_dir}")
 
 
-from isaaclab.app import AppLauncher
+from omni.isaac.lab.app import AppLauncher
 
 # Add argparse arguments
 parser = argparse.ArgumentParser(description="Play UR10 lift task with trained RSL-RL PPO policy")
@@ -90,12 +90,12 @@ import torch
 
 from rsl_rl.runners import OnPolicyRunner
 
-from isaaclab.envs import ManagerBasedRLEnvCfg
-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
+from omni.isaac.lab.envs import ManagerBasedRLEnvCfg
+from omni.isaac.lab_tasks.utils.wrappers.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 
 # Import custom tasks - this registers the environment
 import manip_tasks  # noqa: F401
-from isaaclab_tasks.utils import parse_env_cfg
+from omni.isaac.lab_tasks.utils import parse_env_cfg
 
 # Set torch settings
 torch.backends.cuda.matmul.allow_tf32 = True

@@ -10,7 +10,7 @@ import torch
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from isaaclab.envs import ManagerBasedRLEnv
+    from omni.isaac.lab.envs import ManagerBasedRLEnv
 
 
 def object_rotation_penalty(env: ManagerBasedRLEnv) -> torch.Tensor:
