@@ -36,16 +36,9 @@ from omni.isaac.lab.managers import SceneEntityCfg
 from omni.isaac.lab.sensors import FrameTransformer
 from omni.isaac.lab.utils.math import combine_frame_transforms
 
-
-import torch
 from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
     from omni.isaac.lab.envs import ManagerBasedRLEnv
-
-
-
-
 
 import math
 import os
@@ -66,65 +59,12 @@ from manip_tasks.observations import (
     visual_object_features,
 )
 
-##
-# Scene definition
-##
-
-
-
-
-def object_is_lifted(
-    env: ManagerBasedRLEnv, minimal_height: float, object_cfg: SceneEntityCfg = SceneEntityCfg("object")
-) -> torch.Tensor:
-    """Reward the agent for lifting the object above the minimal height."""
-    object: RigidObject = env.scene[object_cfg.name]
-    # print("object height", object.data.root_pos_w[:, 2])
-    return torch.where(object.data.root_pos_w[:, 2] > minimal_height, 1.0, 0.0)
-
-
-def object_ee_distance(
-    env: ManagerBasedRLEnv,
-    std: float,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
-) -> torch.Tensor:
-    """Reward the agent for reaching the object using tanh-kernel."""
-    # extract the used quantities (to enable type-hinting)
-    object: RigidObject = env.scene[object_cfg.name]
-    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
-    # Target object position: (num_envs, 3)
-    cube_pos_w = object.data.root_pos_w
-    # End-effector position: (num_envs, 3)
-    ee_w = ee_frame.data.target_pos_w[..., 0, :]
-
-    # print("cube_pos_w", cube_pos_w)
-    # print("ee_w", ee_w)
-    # Distance of the end-effector to the object: (num_envs,)
-    object_ee_distance = torch.norm(cube_pos_w - ee_w, dim=1)
-
-    return 1 - torch.tanh(object_ee_distance / std)
-
-
-def object_goal_distance(
-    env: ManagerBasedRLEnv,
-    std: float,
-    minimal_height: float,
-    command_name: str,
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-) -> torch.Tensor:
-    """Reward the agent for tracking the goal pose using tanh-kernel."""
-    # extract the used quantities (to enable type-hinting)
-    robot: RigidObject = env.scene[robot_cfg.name]
-    object: RigidObject = env.scene[object_cfg.name]
-    command = env.command_manager.get_command(command_name)
-    # compute the desired position in the world frame
-    des_pos_b = command[:, :3]
-    des_pos_w, _ = combine_frame_transforms(robot.data.root_state_w[:, :3], robot.data.root_state_w[:, 3:7], des_pos_b)
-    # distance of the end-effector to the object: (num_envs,)
-    distance = torch.norm(des_pos_w - object.data.root_pos_w[:, :3], dim=1)
-    # rewarded if the object is lifted above the threshold
-    return (object.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
+# Import custom reward functions
+from manip_tasks.tasks.rewards import (
+    object_is_lifted,
+    object_ee_distance,
+    object_goal_distance,
+)
 
 
 MODALITIES = {
@@ -138,6 +78,11 @@ MODALITIES = {
 OBJECTS_DIR = os.path.join(str(Path.home()), "Workspace/Projects/robotic-grasping-rl/objects")
 
 
+##
+# Scene definition
+##
+
+
 @configclass
 class ObjectTableSceneCfg(InteractiveSceneCfg):
     """Configuration for the lift scene with a robot and a object.
@@ -147,24 +92,6 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
 
     # Set UR10 with Hand-E gripper
     robot = UR10_WITH_GRIPPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
-
-    # # OPTION 1: Built-in DexCube (recommended - has proper collision)
-    # object = RigidObjectCfg(
-    #     prim_path="{ENV_REGEX_NS}/Object",
-    #     init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
-    #     spawn=UsdFileCfg(
-    #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-    #         scale=(0.8, 0.8, 0.8),
-    #         rigid_props=RigidBodyPropertiesCfg(
-    #             solver_position_iteration_count=16,
-    #             solver_velocity_iteration_count=1,
-    #             max_angular_velocity=1000.0,
-    #             max_linear_velocity=1000.0,
-    #             max_depenetration_velocity=5.0,
-    #             disable_gravity=False,
-    #         ),
-    #     ),
-    # )
 
     # OPTION 2: Custom tin-can - using cylinder collision approximation
     object = RigidObjectCfg(
@@ -243,8 +170,11 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     # table = AssetBaseCfg(
     #     prim_path="{ENV_REGEX_NS}/Table",
     #     init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0, 0], rot=[0.707, 0, 0, 0.707]),
-    #     spawn=UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"),
+    #     spawn=UsdFileCfg(
+    #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd",
+    #     ),
     # )
+
 
    # Table
     table = AssetBaseCfg(
@@ -409,16 +339,6 @@ class EventCfg:
             "velocity_range": (0.0, 0.0),
         },
     )
-
-    # reset_robot_joints = EventTerm(
-    #     func=mdp.reset_joints_by_offset,
-    #     mode="reset",
-    #     params={
-    #         "position_range": (-0.6, 0.6),
-    #         "velocity_range": (0.0, 0.0),
-    #         "asset_cfg": SceneEntityCfg("robot", joint_names=["shoulder_.*", "elbow_joint"]), #, "wrist_.*"]),
-    #     },
-    # )
 
 
 @configclass
