@@ -93,12 +93,12 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     # Set UR10 with Hand-E gripper
     robot = UR10_WITH_GRIPPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-    # OPTION 2: Custom tin-can - using cylinder collision approximation
+    # Custom tin-can
     object = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Object",
         init_state=RigidObjectCfg.InitialStateCfg(
-            pos=[0.5, 0, 0.075],  # Cylinder height/2 + table height
-            rot=[1, 0, 0, 0],  # Upright cylinder
+            pos=[0.5, 0, 0.075],
+            rot=[1, 0, 0, 0],
         ),
         spawn=sim_utils.CylinderCfg(
             radius=0.033,  
@@ -117,38 +117,6 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         ),
     )
 
-    # OPTION 3: YCB tomato soup can (try if DexCube works - may need nucleus server)
-    # object = RigidObjectCfg(
-    #     prim_path="{ENV_REGEX_NS}/Object",
-    #     init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.1], rot=[1, 0, 0, 0]),
-    #     spawn=UsdFileCfg(
-    #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/005_tomato_soup_can.usd",
-    #         rigid_props=RigidBodyPropertiesCfg(
-    #             solver_position_iteration_count=16,
-    #             solver_velocity_iteration_count=1,
-    #             max_angular_velocity=1000.0,
-    #             max_linear_velocity=1000.0,
-    #             max_depenetration_velocity=5.0,
-    #             disable_gravity=False,
-    #         ),
-    #     ),
-    # )
-
-    # # Frame transformer for object tracking
-    # object_frame = FrameTransformerCfg(
-    #     prim_path="{ENV_REGEX_NS}/Object",
-    #     debug_vis=True,
-    #     visualizer_cfg=FRAME_MARKER_CFG.replace(prim_path="/Visuals/ObjectFrameTransformer"),
-    #     target_frames=[
-    #         FrameTransformerCfg.FrameCfg(
-    #             prim_path="{ENV_REGEX_NS}/Object",
-    #             name="object",
-    #             offset=OffsetCfg(
-    #                 pos=[0.0, 0.0, 0.0],
-    #             ),
-    #         ),
-    #     ],
-    # )
 
     # Frame transformer for end-effector tracking (Hand-E gripper)
     ee_frame = FrameTransformerCfg(
@@ -165,16 +133,6 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
             ),
         ],
     )
-
-    # # Table
-    # table = AssetBaseCfg(
-    #     prim_path="{ENV_REGEX_NS}/Table",
-    #     init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0, 0], rot=[0.707, 0, 0, 0.707]),
-    #     spawn=UsdFileCfg(
-    #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd",
-    #     ),
-    # )
-
 
    # Table
     table = AssetBaseCfg(
