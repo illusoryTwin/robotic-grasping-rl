@@ -101,9 +101,9 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
             rot=[1, 0, 0, 0],  # Upright cylinder
         ),
         spawn=sim_utils.CylinderCfg(
-            radius=0.033,  # ~33mm radius (typical soup can)
-            height=0.08,   # ~80mm height (shorter can)
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.05, 0.05, 0.05)), # (0.5, 0.5, 0.5)),
+            radius=0.033,  
+            height=0.08,
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.05, 0.05, 0.05)),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=1,
