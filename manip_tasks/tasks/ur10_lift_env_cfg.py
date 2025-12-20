@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Ekaterina Mozhegova
 #
 # SPDX-License-Identifier: MIT
+from __future__ import annotations
 
 from dataclasses import MISSING
 
@@ -30,6 +31,20 @@ from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
 from omni.isaac.lab_tasks.manager_based.manipulation.lift import mdp
 from omni.isaac.lab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
 from omni.isaac.lab.markers.config import FRAME_MARKER_CFG, VisualizationMarkersCfg  # isort: skip
+from omni.isaac.lab.assets import RigidObject
+from omni.isaac.lab.managers import SceneEntityCfg
+from omni.isaac.lab.sensors import FrameTransformer
+from omni.isaac.lab.utils.math import combine_frame_transforms
+
+
+import torch
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from omni.isaac.lab.envs import ManagerBasedRLEnv
+
+
+
 
 
 import math
@@ -57,6 +72,61 @@ from manip_tasks.observations import (
 
 
 
+
+def object_is_lifted(
+    env: ManagerBasedRLEnv, minimal_height: float, object_cfg: SceneEntityCfg = SceneEntityCfg("object")
+) -> torch.Tensor:
+    """Reward the agent for lifting the object above the minimal height."""
+    object: RigidObject = env.scene[object_cfg.name]
+    print("object height", object.data.root_pos_w[:, 2])
+    return torch.where(object.data.root_pos_w[:, 2] > minimal_height, 1.0, 0.0)
+
+
+def object_ee_distance(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """Reward the agent for reaching the object using tanh-kernel."""
+    # extract the used quantities (to enable type-hinting)
+    object: RigidObject = env.scene[object_cfg.name]
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+    # Target object position: (num_envs, 3)
+    cube_pos_w = object.data.root_pos_w
+    # End-effector position: (num_envs, 3)
+    ee_w = ee_frame.data.target_pos_w[..., 0, :]
+
+    print("cube_pos_w", cube_pos_w)
+    print("ee_w", ee_w)
+    # Distance of the end-effector to the object: (num_envs,)
+    object_ee_distance = torch.norm(cube_pos_w - ee_w, dim=1)
+
+    return 1 - torch.tanh(object_ee_distance / std)
+
+
+def object_goal_distance(
+    env: ManagerBasedRLEnv,
+    std: float,
+    minimal_height: float,
+    command_name: str,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Reward the agent for tracking the goal pose using tanh-kernel."""
+    # extract the used quantities (to enable type-hinting)
+    robot: RigidObject = env.scene[robot_cfg.name]
+    object: RigidObject = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    # compute the desired position in the world frame
+    des_pos_b = command[:, :3]
+    des_pos_w, _ = combine_frame_transforms(robot.data.root_state_w[:, :3], robot.data.root_state_w[:, 3:7], des_pos_b)
+    # distance of the end-effector to the object: (num_envs,)
+    distance = torch.norm(des_pos_w - object.data.root_pos_w[:, :3], dim=1)
+    # rewarded if the object is lifted above the threshold
+    return (object.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
+
+
 MODALITIES = {
     "rgb": 4,
     "distance_to_image_plane": 1,
@@ -78,27 +148,7 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     # Set UR10 with Hand-E gripper
     robot = UR10_WITH_GRIPPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-    object = RigidObjectCfg(
-        prim_path="{ENV_REGEX_NS}/Object",
-        init_state=RigidObjectCfg.InitialStateCfg(
-            pos=[0.5, 0, 0.055],
-            rot=[0.7071, 0.7071, 0, 0],  # 90° rotation around X-axis to stand upright
-        ),
-        spawn=UsdFileCfg(
-            usd_path=os.path.join(OBJECTS_DIR, "tin-can.usd"),
-            # scale=(0.8, 0.8, 0.8),
-            rigid_props=RigidBodyPropertiesCfg(
-                solver_position_iteration_count=16,
-                solver_velocity_iteration_count=1,
-                max_angular_velocity=1000.0,
-                max_linear_velocity=1000.0,
-                max_depenetration_velocity=5.0,
-                disable_gravity=False,
-            ),
-            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-        ),
-    )
-
+    # # OPTION 1: Built-in DexCube (recommended - has proper collision)
     # object = RigidObjectCfg(
     #     prim_path="{ENV_REGEX_NS}/Object",
     #     init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
@@ -116,6 +166,62 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     #     ),
     # )
 
+    # OPTION 2: Custom tin-can - using cylinder collision approximation
+    object = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Object",
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=[0.5, 0, 0.075],  # Cylinder height/2 + table height
+            rot=[1, 0, 0, 0],  # Upright cylinder
+        ),
+        spawn=sim_utils.CylinderCfg(
+            radius=0.033,  # ~33mm radius (typical soup can)
+            height=0.08,   # ~80mm height (shorter can)
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.1, 0.1)),  # Red color for can
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                solver_position_iteration_count=16,
+                solver_velocity_iteration_count=1,
+                max_angular_velocity=1000.0,
+                max_linear_velocity=1000.0,
+                max_depenetration_velocity=5.0,
+                disable_gravity=False,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.05),  # 50g
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+        ),
+    )
+
+    # OPTION 3: YCB tomato soup can (try if DexCube works - may need nucleus server)
+    # object = RigidObjectCfg(
+    #     prim_path="{ENV_REGEX_NS}/Object",
+    #     init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.1], rot=[1, 0, 0, 0]),
+    #     spawn=UsdFileCfg(
+    #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/005_tomato_soup_can.usd",
+    #         rigid_props=RigidBodyPropertiesCfg(
+    #             solver_position_iteration_count=16,
+    #             solver_velocity_iteration_count=1,
+    #             max_angular_velocity=1000.0,
+    #             max_linear_velocity=1000.0,
+    #             max_depenetration_velocity=5.0,
+    #             disable_gravity=False,
+    #         ),
+    #     ),
+    # )
+
+    # # Frame transformer for object tracking
+    # object_frame = FrameTransformerCfg(
+    #     prim_path="{ENV_REGEX_NS}/Object",
+    #     debug_vis=True,
+    #     visualizer_cfg=FRAME_MARKER_CFG.replace(prim_path="/Visuals/ObjectFrameTransformer"),
+    #     target_frames=[
+    #         FrameTransformerCfg.FrameCfg(
+    #             prim_path="{ENV_REGEX_NS}/Object",
+    #             name="object",
+    #             offset=OffsetCfg(
+    #                 pos=[0.0, 0.0, 0.0],
+    #             ),
+    #         ),
+    #     ],
+    # )
 
     # Frame transformer for end-effector tracking (Hand-E gripper)
     ee_frame = FrameTransformerCfg(
@@ -133,11 +239,21 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         ],
     )
 
-    # Table
+    # # Table
+    # table = AssetBaseCfg(
+    #     prim_path="{ENV_REGEX_NS}/Table",
+    #     init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0, 0], rot=[0.707, 0, 0, 0.707]),
+    #     spawn=UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"),
+    # )
+
+   # Table
     table = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/Table",
         init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0, 0], rot=[0.707, 0, 0, 0.707]),
-        spawn=UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"),
+        spawn=UsdFileCfg(
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd",
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+        ),
     )
 
     # plane
@@ -211,7 +327,7 @@ class ActionsCfg:
     # Set actions for UR10
     arm_action = mdp.JointPositionActionCfg(
         asset_name="robot",
-        joint_names=["shoulder_.*", "elbow_joint", "wrist_.*"],
+        joint_names=[".*"], # ["shoulder_.*", "elbow_joint", "wrist_.*"],
         scale=0.5,
         use_default_offset=True,
     )
@@ -278,38 +394,65 @@ class EventCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (-0.1, 0.1), "y": (-0.25, 0.25), "z": (0.0, 0.0)},
+            # Randomize object position on the table (relative to base position [0.5, 0, 0.075])
+            "pose_range": {"x": (-0.15, 0.15), "y": (-0.2, 0.2), "z": (0.075, 0.075)},
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object", body_names="Object"),
         },
     )
 
     reset_robot_joints = EventTerm(
-        func=mdp.reset_joints_by_offset,
+        func=mdp.reset_joints_by_scale,
         mode="reset",
         params={
-            "position_range": (-0.6, 0.6),
+            "position_range": (0.5, 1.5),
             "velocity_range": (0.0, 0.0),
-            "asset_cfg": SceneEntityCfg("robot", joint_names=["shoulder_.*", "elbow_joint"]), #, "wrist_.*"]),
         },
     )
+
+    # reset_robot_joints = EventTerm(
+    #     func=mdp.reset_joints_by_offset,
+    #     mode="reset",
+    #     params={
+    #         "position_range": (-0.6, 0.6),
+    #         "velocity_range": (0.0, 0.0),
+    #         "asset_cfg": SceneEntityCfg("robot", joint_names=["shoulder_.*", "elbow_joint"]), #, "wrist_.*"]),
+    #     },
+    # )
 
 
 @configclass
 class RewardsCfg:
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
+    # reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
 
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
+    # lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
+
+    # object_goal_tracking = RewTerm(
+    #     func=mdp.object_goal_distance,
+    #     params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose"},
+    #     weight=16.0,
+    # )
+
+    # object_goal_tracking_fine_grained = RewTerm(
+    #     func=mdp.object_goal_distance,
+    #     params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
+    #     weight=5.0,
+    # )
+
+
+    reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.1}, weight=1.0)
+
+    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.03}, weight=15.0)
 
     object_goal_tracking = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose"},
+        func=object_goal_distance,
+        params={"std": 0.3, "minimal_height": 0.03, "command_name": "object_pose"},
         weight=16.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
+        func=object_goal_distance,
+        params={"std": 0.05, "minimal_height": 0.03, "command_name": "object_pose"},
         weight=5.0,
     )
 
