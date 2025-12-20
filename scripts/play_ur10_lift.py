@@ -23,8 +23,8 @@ from pathlib import Path
 MANIP_RL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(MANIP_RL_DIR))
 
-# Default logs directory
-LOGS_DIR = MANIP_RL_DIR / "logs" / "rsl_rl" / "ur10_lift"
+# Default logs directory (relative to current working directory, where isaaclab.sh runs from)
+LOGS_DIR = Path.cwd() / "logs" / "rsl_rl" / "ur10_lift"
 
 
 def find_latest_checkpoint(logs_dir: Path = LOGS_DIR) -> Path:
@@ -183,9 +183,7 @@ def main():
     policy = runner.get_inference_policy(device=env_cfg.sim.device)
 
     # Reset environment
-    obs_dict = env.get_observations()
-    # Extract policy observations if dict, otherwise use directly
-    obs = obs_dict if not isinstance(obs_dict, dict) else obs_dict.get('policy', obs_dict)
+    obs, _ = env.get_observations()
 
     # Simulate
     print(f"[INFO] Starting visualization with {args_cli.num_envs} environments")
@@ -199,10 +197,7 @@ def main():
                 actions = policy(obs)
 
                 # Step environment
-                obs_dict, _, _, _ = env.step(actions)
-
-                # Extract policy observations for next iteration
-                obs = obs_dict if not isinstance(obs_dict, dict) else obs_dict.get('policy', obs_dict)
+                obs, _, _, _ = env.step(actions)
 
             timestep += 1
 
