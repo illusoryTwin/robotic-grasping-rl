@@ -78,7 +78,7 @@ def object_is_lifted(
 ) -> torch.Tensor:
     """Reward the agent for lifting the object above the minimal height."""
     object: RigidObject = env.scene[object_cfg.name]
-    print("object height", object.data.root_pos_w[:, 2])
+    # print("object height", object.data.root_pos_w[:, 2])
     return torch.where(object.data.root_pos_w[:, 2] > minimal_height, 1.0, 0.0)
 
 
@@ -97,8 +97,8 @@ def object_ee_distance(
     # End-effector position: (num_envs, 3)
     ee_w = ee_frame.data.target_pos_w[..., 0, :]
 
-    print("cube_pos_w", cube_pos_w)
-    print("ee_w", ee_w)
+    # print("cube_pos_w", cube_pos_w)
+    # print("ee_w", ee_w)
     # Distance of the end-effector to the object: (num_envs,)
     object_ee_distance = torch.norm(cube_pos_w - ee_w, dim=1)
 
@@ -176,7 +176,7 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.CylinderCfg(
             radius=0.033,  # ~33mm radius (typical soup can)
             height=0.08,   # ~80mm height (shorter can)
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.1, 0.1)),  # Red color for can
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.05, 0.05, 0.05)), # (0.5, 0.5, 0.5)),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=1,
@@ -442,17 +442,17 @@ class RewardsCfg:
 
     reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.1}, weight=1.0)
 
-    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.03}, weight=15.0)
+    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.05}, weight=15.0)
 
     object_goal_tracking = RewTerm(
         func=object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.03, "command_name": "object_pose"},
+        params={"std": 0.3, "minimal_height": 0.05, "command_name": "object_pose"},
         weight=16.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
         func=object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.03, "command_name": "object_pose"},
+        params={"std": 0.05, "minimal_height": 0.05, "command_name": "object_pose"},
         weight=5.0,
     )
 
