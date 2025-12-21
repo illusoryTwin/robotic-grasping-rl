@@ -46,6 +46,46 @@ def wrist_camera_depth(env: ManagerBasedRLEnv) -> torch.Tensor:
     return depth_normalized.unsqueeze(-1)  # Add channel dimension
 
 
+def ee_pose_in_robot_frame(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """End-effector pose (position + quaternion) in robot base frame.
+
+    Returns:
+        Tensor of shape (num_envs, 7): [x, y, z, qw, qx, qy, qz]
+    """
+    ee_frame = env.scene["ee_frame"]
+    # Position and quaternion in source (robot base) frame
+    ee_pos = ee_frame.data.target_pos_source[:, 0, :]  # (num_envs, 3)
+    ee_quat = ee_frame.data.target_quat_source[:, 0, :]  # (num_envs, 4)
+    return torch.cat([ee_pos, ee_quat], dim=-1)
+
+
+def object_pose_in_robot_frame(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Object pose (position + quaternion) in robot base frame.
+
+    Returns:
+        Tensor of shape (num_envs, 7): [x, y, z, qw, qx, qy, qz]
+    """
+    from omni.isaac.lab.utils.math import subtract_frame_transforms
+
+    robot = env.scene["robot"]
+    obj = env.scene["object"]
+
+    # Object in world frame
+    obj_pos_w = obj.data.root_pos_w
+    obj_quat_w = obj.data.root_quat_w
+
+    # Robot base in world frame
+    robot_pos_w = robot.data.root_state_w[:, :3]
+    robot_quat_w = robot.data.root_state_w[:, 3:7]
+
+    # Transform to robot frame
+    obj_pos_b, obj_quat_b = subtract_frame_transforms(
+        robot_pos_w, robot_quat_w, obj_pos_w, obj_quat_w
+    )
+
+    return torch.cat([obj_pos_b, obj_quat_b], dim=-1)
+
+
 def visual_object_features(env: ManagerBasedRLEnv) -> torch.Tensor:
     """
     Extract engineered visual features from camera data.
