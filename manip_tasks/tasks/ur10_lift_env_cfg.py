@@ -318,7 +318,7 @@ class RewardsCfg:
     # )
 
 
-    reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.1}, weight=1.0)
+    reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.7}, weight=1.0)
 
     lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.05}, weight=15.0)
 
@@ -338,7 +338,7 @@ class RewardsCfg:
 
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
-        weight=-1e-4,
+        weight=-1e-3, # -1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     
