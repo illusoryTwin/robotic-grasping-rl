@@ -6,6 +6,10 @@
 
 from __future__ import annotations
 
+from omni.isaac.lab.managers import SceneEntityCfg
+from omni.isaac.lab.sensors import FrameTransformer
+from omni.isaac.lab.utils.math import combine_frame_transforms
+
 import torch
 from typing import TYPE_CHECKING
 
@@ -19,6 +23,26 @@ def object_is_lifted(
     object: RigidObject = env.scene[object_cfg.name]
     # print("object height", object.data.root_pos_w[:, 2])
     return torch.where(object.data.root_pos_w[:, 2] > minimal_height, 1.0, 0.0)
+
+
+def object_is_lifted_and_grasped(
+    env: ManagerBasedRLEnv, minimal_height: float, object_cfg: SceneEntityCfg = SceneEntityCfg("object")
+) -> torch.Tensor:
+    """Reward the agent for lifting the object above the minimal height while end-effector is close."""
+    object: RigidObject = env.scene[object_cfg.name]
+    ee_frame: FrameTransformer = env.scene["ee_frame"]
+    
+    # Check if object is lifted
+    lifted = object.data.root_pos_w[:, 2] > minimal_height
+    
+    # Check if end-effector is close to object (indicating grasp)
+    object_pos = object.data.root_pos_w
+    ee_pos = ee_frame.data.target_pos_w[..., 0, :]
+    object_ee_distance = torch.norm(object_pos - ee_pos, dim=1)
+    close = object_ee_distance < 0.04
+    
+    # Only reward if both conditions are met: lifted AND close
+    return torch.where(lifted & close, 1.0, 0.0)
 
 
 def object_ee_distance(
@@ -83,6 +107,52 @@ def object_rotation_penalty(env: ManagerBasedRLEnv) -> torch.Tensor:
     rotation_magnitude = torch.abs(quat_w[:, 1]) + torch.abs(quat_w[:, 2]) + torch.abs(quat_w[:, 3])
     
     return rotation_magnitude
+
+
+
+def center_gripper_on_object(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """Reward for centering end effector between long sides of tetra pak object."""
+    object: RigidObject = env.scene[object_cfg.name]
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+    
+    # Get object and end effector positions
+    object_pos = object.data.root_pos_w[:, :3]  # (num_envs, 3)
+    ee_pos = ee_frame.data.target_pos_w[..., 0, :]  # (num_envs, 3)
+    
+    # Get object orientation (quaternion)
+    object_quat = object.data.root_quat_w  # (num_envs, 4)
+    
+    # Transform end effector position to object frame
+    # For tetra pak: long sides are along Y axis (front/back faces)
+    # We want equal distance from front and back faces
+    
+    # Rotation matrix from quaternion (simplified for Y-axis)
+    # quat = [w, x, y, z], rotation matrix R
+    w, x, y, z = object_quat[:, 0], object_quat[:, 1], object_quat[:, 2], object_quat[:, 3]
+    
+    # Y-axis direction vector in world frame (object's local Y transformed to world)
+    y_world = torch.stack([
+        2 * (x*y - w*z),
+        1 - 2 * (x*x + z*z), 
+        2 * (y*z + w*x)
+    ], dim=1)  # (num_envs, 3)
+    
+    # Vector from object center to end effector
+    ee_to_obj = ee_pos - object_pos  # (num_envs, 3)
+    
+    # Project this vector onto the object's Y-axis (long axis)
+    projection_y = torch.sum(ee_to_obj * y_world, dim=1)  # (num_envs,)
+    
+    # Reward is higher when projection is close to zero (centered)
+    # Use absolute value since we want minimal distance from center
+    centering_error = torch.abs(projection_y)
+    
+    return 1 - torch.tanh(centering_error / std)
 
 
 def object_translation_penalty(env: ManagerBasedRLEnv) -> torch.Tensor:
@@ -454,3 +524,61 @@ def time_penalty_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Small constant penalty per step to encourage faster grasping."""
     return torch.full((env.num_envs,), 0.05, device=env.device)
 
+
+
+def finger_object_distance_shaping(
+    env: ManagerBasedRLEnv,
+    std: float = 0.02,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Dense reward shaping for finger-to-object distance (both fingers)."""
+    robot = env.scene["robot"]
+    object: RigidObject = env.scene[object_cfg.name]
+    
+    # Get finger positions
+    left_idx = robot.find_bodies("hande_left_finger")[0][0]
+    right_idx = robot.find_bodies("hande_right_finger")[0][0]
+    
+    left_finger_pos = robot.data.body_pos_w[:, left_idx, :]
+    right_finger_pos = robot.data.body_pos_w[:, right_idx, :]
+    
+    # Object position
+    obj_pos = object.data.root_pos_w[:, :3]
+    
+    # Distances from each finger to object
+    left_dist = torch.norm(left_finger_pos - obj_pos, dim=-1)
+    right_dist = torch.norm(right_finger_pos - obj_pos, dim=-1)
+    
+    # Average distance reward using tanh kernel
+    avg_dist = (left_dist + right_dist) / 2.0
+    return 1 - torch.tanh(avg_dist / std)
+
+
+def both_fingers_contact_soft(
+    env: ManagerBasedRLEnv,
+    std: float = 0.02,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Soft reward for both fingers being in contact with object."""
+    robot = env.scene["robot"]
+    object: RigidObject = env.scene[object_cfg.name]
+    
+    # Get finger positions
+    left_idx = robot.find_bodies("hande_left_finger")[0][0]
+    right_idx = robot.find_bodies("hande_right_finger")[0][0]
+    
+    left_finger_pos = robot.data.body_pos_w[:, left_idx, :]
+    right_finger_pos = robot.data.body_pos_w[:, right_idx, :]
+    
+    # Object position
+    obj_pos = object.data.root_pos_w[:, :3]
+    
+    # Soft contact rewards (exponential decay)
+    left_dist = torch.norm(left_finger_pos - obj_pos, dim=-1)
+    right_dist = torch.norm(right_finger_pos - obj_pos, dim=-1)
+    
+    left_contact = torch.exp(-left_dist / std)
+    right_contact = torch.exp(-right_dist / std)
+    
+    # Reward is product of both contacts (encourages both fingers to be close)
+    return left_contact * right_contact

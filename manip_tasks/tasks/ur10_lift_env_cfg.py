@@ -32,9 +32,8 @@ from omni.isaac.lab_tasks.manager_based.manipulation.lift import mdp
 from omni.isaac.lab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
 from omni.isaac.lab.markers.config import FRAME_MARKER_CFG, VisualizationMarkersCfg  # isort: skip
 from omni.isaac.lab.assets import RigidObject
-from omni.isaac.lab.managers import SceneEntityCfg
-from omni.isaac.lab.sensors import FrameTransformer
-from omni.isaac.lab.utils.math import combine_frame_transforms
+from omni.isaac.lab.sim.spawners.shapes import CuboidCfg
+
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -60,10 +59,14 @@ from manip_tasks.observations import (
 )
 
 # Import custom reward functions
-from manip_tasks.tasks.rewards import (
+from manip_tasks.rewards import (
     object_is_lifted,
     object_ee_distance,
     object_goal_distance,
+    center_gripper_on_object,
+    object_is_lifted_and_grasped,
+    finger_object_distance_shaping,
+    both_fingers_contact_soft
 )
 
 
@@ -93,18 +96,41 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     # Set UR10 with Hand-E gripper
     robot = UR10_WITH_GRIPPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-    # Custom tin-can
+    # # Custom tin-can
+    # object = RigidObjectCfg(
+    #     prim_path="{ENV_REGEX_NS}/Object",
+    #     init_state=RigidObjectCfg.InitialStateCfg(
+    #         pos=[0.5, 0, 0.075],
+    #         rot=[1, 0, 0, 0],
+    #     ),
+    #     spawn=sim_utils.CylinderCfg(
+    #         radius=0.033,  
+    #         height=0.08,
+    #         visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.05, 0.05, 0.05)),
+    #         rigid_props=sim_utils.RigidBodyPropertiesCfg(
+    #             solver_position_iteration_count=16,
+    #             solver_velocity_iteration_count=1,
+    #             max_angular_velocity=1000.0,
+    #             max_linear_velocity=1000.0,
+    #             max_depenetration_velocity=5.0,
+    #             disable_gravity=False,
+    #         ),
+    #         mass_props=sim_utils.MassPropertiesCfg(mass=0.05),  # 50g
+    #         collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+    #     ),
+    # )
+
+    # Tetra Pak-like carton (rectangular prism)
     object = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Object",
         init_state=RigidObjectCfg.InitialStateCfg(
-            pos=[0.5, 0, 0.075],
-            rot=[1, 0, 0, 0],
+            pos=[0.5, 0, 0.027],  # Adjust height for tetra pak
+            # rot=[1, 0, 0, 0],  # Upright orientation
+            rot=[0.707, 0.707, 0, 0],  # Rotated 90° to lie on long side
         ),
-        spawn=sim_utils.CylinderCfg(
-            radius=0.033,  
-            height=0.08,
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.05, 0.05, 0.05)),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+        spawn=CuboidCfg(
+            size=(0.06, 0.06, 0.18),  # (width, depth, height) - tetra pak proportions
+            rigid_props=RigidBodyPropertiesCfg(
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=1,
                 max_angular_velocity=1000.0,
@@ -112,11 +138,33 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
                 max_depenetration_velocity=5.0,
                 disable_gravity=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.05),  # 50g
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),  # Light like a carton
             collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.6, 0.4)),  # Cardboard color
         ),
     )
 
+
+#    # Tetra Pak carton
+#     object = RigidObjectCfg(
+#         prim_path="{ENV_REGEX_NS}/Object",
+#         init_state=RigidObjectCfg.InitialStateCfg(
+#             pos=[0.5, 0, 0.1],  # Adjust height for tetra pak
+#             rot=[1, 0, 0, 0],  # Upright orientation
+#         ),
+#         spawn=UsdFileCfg(
+#             usd_path=os.path.join(OBJECTS_DIR, "tetra-pak-carton.usd"),
+#             rigid_props=RigidBodyPropertiesCfg(
+#                 solver_position_iteration_count=16,
+#                 solver_velocity_iteration_count=1,
+#                 max_angular_velocity=1000.0,
+#                 max_linear_velocity=1000.0,
+#                 max_depenetration_velocity=5.0,
+#                 disable_gravity=False,
+#             ),
+#             collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+#         ),
+#     )
 
     # Frame transformer for end-effector tracking (Hand-E gripper)
     ee_frame = FrameTransformerCfg(
@@ -278,16 +326,28 @@ class EventCfg:
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
 
-    reset_object_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="reset",
-        params={
-            # Randomize object position on the table (relative to base position [0.5, 0, 0.075])
-            "pose_range": {"x": (-0.15, 0.15), "y": (-0.2, 0.2), "z": (0.075, 0.075)},
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object", body_names="Object"),
-        },
-    )
+    # # reset_object_position = EventTerm(
+    # #     func=mdp.reset_root_state_uniform,
+    # #     mode="reset",
+    # #     params={
+    # #         # Randomize object position on the table (relative to base position [0.5, 0, 0.075])
+    # #         "pose_range": {"x": (-0.15, 0.15), "y": (-0.2, 0.2), "z": (0.075, 0.075)},
+    # #         "velocity_range": {},
+    # #         "asset_cfg": SceneEntityCfg("object", body_names="Object"),
+    # #     },
+    # # )
+
+    # reset_object_position = EventTerm(
+    #     func=mdp.reset_root_state_uniform,
+    #     mode="reset",
+    #     params={
+    #         # Randomize object position on the table (relative to base position for tetra pak)
+    #         "pose_range": {"x": (-0.2, 0.2), "y": (-0.2, 0.2), "z": (0.1, 0.1)},
+    #         "velocity_range": {},
+    #         "asset_cfg": SceneEntityCfg("object", body_names="Object"),
+    #     },
+    # )
+
 
     reset_robot_joints = EventTerm(
         func=mdp.reset_joints_by_scale,
@@ -318,20 +378,35 @@ class RewardsCfg:
     # )
 
 
-    reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.1}, weight=1.0)
+    # reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.5}, weight=1.0) #params={"std": 0.1}, weight=1.0)
 
-    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.05}, weight=15.0)
+    reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.7}, weight=1.0) #params={"std": 0.1}, weight=1.0)
+
+    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
 
     object_goal_tracking = RewTerm(
         func=object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.05, "command_name": "object_pose"},
+        params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose"},
         weight=16.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
         func=object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.05, "command_name": "object_pose"},
+        params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
         weight=5.0,
+    )
+
+    # Finger-level shaping rewards
+    finger_shaping = RewTerm(
+        func=finger_object_distance_shaping,
+        params={"std": 0.3},
+        weight=3.0,
+    )
+
+    both_fingers_contact = RewTerm(
+        func=both_fingers_contact_soft,
+        params={"std": 0.3},
+        weight=4.0,
     )
 
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
