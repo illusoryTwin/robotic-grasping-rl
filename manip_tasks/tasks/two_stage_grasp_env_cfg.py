@@ -142,11 +142,19 @@ class TwoStageGraspActionsCfg:
 
     The RL policy outputs a 6-DoF grasp pose [x, y, z, roll, pitch, yaw].
     This is converted to joint commands via differential IK in the environment.
+
+    We use joint position actions as a placeholder (6D) - the actual pose-to-joint
+    conversion is handled by the custom environment's step() method.
     """
-    # Grasp pose action: 6D pose relative to robot base
-    # Policy outputs: [x, y, z, roll, pitch, yaw] in range [-1, 1]
-    # Scaled to workspace bounds in the environment
-    pass  # Actions are handled by custom environment, not action manager
+    # Use 6 arm joints as placeholder for 6D pose action
+    # The environment's step() will interpret these as [x, y, z, roll, pitch, yaw]
+    grasp_pose = mdp.JointPositionActionCfg(
+        asset_name="robot",
+        joint_names=["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                     "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"],
+        scale=1.0,  # Actions will be in [-1, 1], interpreted as normalized pose
+        use_default_offset=False,
+    )
 
 
 @configclass

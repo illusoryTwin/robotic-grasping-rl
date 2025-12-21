@@ -59,7 +59,7 @@ class TwoStageGraspEnv(ManagerBasedRLEnv):
         # Setup IK controller
         self._setup_ik_controller()
 
-        # Action and observation dimensions
+        # Action dimension for 6-DoF pose
         self._action_dim = 6  # [x, y, z, roll, pitch, yaw]
 
     def _setup_ik_controller(self):
@@ -98,12 +98,6 @@ class TwoStageGraspEnv(ManagerBasedRLEnv):
             self.ee_jacobi_idx = self.robot_entity_cfg.body_ids[0] - 1
         else:
             self.ee_jacobi_idx = self.robot_entity_cfg.body_ids[0]
-
-    @property
-    def action_space(self):
-        """Return action space for 6D pose prediction."""
-        import gymnasium as gym
-        return gym.spaces.Box(low=-1.0, high=1.0, shape=(self._action_dim,))
 
     def step(self, action: torch.Tensor):
         """Execute one step of the environment.
