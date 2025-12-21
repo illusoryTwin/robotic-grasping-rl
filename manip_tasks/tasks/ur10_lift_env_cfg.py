@@ -159,27 +159,27 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
 
     # Camera disabled for faster training with privileged info
     # Uncomment to enable vision-based training
-    # wrist_camera = CameraCfg(
-    #     prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/wrist_camera",
-    #     update_period=0.001,
-    #     height=480,
-    #     width=640,
-    #     data_types=[*MODALITIES],
-    #     colorize_instance_id_segmentation=False,
-    #     colorize_semantic_segmentation=False,
-    #     colorize_instance_segmentation=False,
-    #     spawn=sim_utils.PinholeCameraCfg(
-    #         focal_length=24.0,
-    #         focus_distance=400.0,
-    #         horizontal_aperture=20.955,
-    #         clipping_range=(0.01, 1e5),
-    #     ),
-    #     offset=CameraCfg.OffsetCfg(
-    #         pos=(0.1, 0.1, 0.1),
-    #         rot=(0.1, 0.1, 0.1, 0.1),
-    #         convention="ros",
-    #     ),
-    # )
+    wrist_camera = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/wrist_camera",
+        update_period=0.001,
+        height=480,
+        width=640,
+        data_types=[*MODALITIES],
+        colorize_instance_id_segmentation=False,
+        colorize_semantic_segmentation=False,
+        colorize_instance_segmentation=False,
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.01, 1e5),
+        ),
+        offset=CameraCfg.OffsetCfg(
+            pos=(0.0, 0.0, -0.1),  # 10cm back from wrist for better field of view
+            rot=(0.707, 0.0, 0.0, 0.707),  # Look down 90 degrees towards gripper
+            convention="ros",
+        ),
+    )
 
 
 
@@ -241,12 +241,12 @@ class ObservationsCfg:
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
 
-        # # OPTION A: Vision-based (no ground truth)
-        # visual_features = ObsTerm(func=visual_object_features)
+        # OPTION A: Vision-based (no ground truth)
+        visual_features = ObsTerm(func=visual_object_features)
 
-        # OPTION B: Ground truth (privileged info)
-        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
-        object_orientation = ObsTerm(func=object_orientation_in_robot_root_frame)
+        # # OPTION B: Ground truth (privileged info)
+        # object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        # object_orientation = ObsTerm(func=object_orientation_in_robot_root_frame)
 
         # Task command
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
@@ -269,7 +269,7 @@ class ObservationsCfg:
 
     # observation groups
     policy: PolicyCfg = PolicyCfg()
-    # image: ImageCfg = ImageCfg()  # Disabled: not using vision-based policy
+    image: ImageCfg = ImageCfg()  # Disabled: not using vision-based policy
 
 
 @configclass
