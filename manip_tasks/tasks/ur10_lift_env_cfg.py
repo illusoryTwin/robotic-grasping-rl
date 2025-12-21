@@ -60,7 +60,7 @@ from manip_tasks.observations import (
 )
 
 # Import custom reward functions
-from manip_tasks.tasks.rewards import (
+from manip_tasks.rewards import (
     object_is_lifted,
     object_ee_distance,
     object_goal_distance,
