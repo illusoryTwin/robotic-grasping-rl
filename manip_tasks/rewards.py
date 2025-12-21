@@ -24,6 +24,23 @@ def object_is_lifted(
     # print("object height", object.data.root_pos_w[:, 2])
     return torch.where(object.data.root_pos_w[:, 2] > minimal_height, 1.0, 0.0)
 
+# def object_is_lifted(
+#     env: ManagerBasedRLEnv,
+#     minimal_height: float,
+#     max_velocity: float = 0.05,
+#     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+# ) -> torch.Tensor:
+
+#     object = env.scene[object_cfg.name]
+
+#     height = object.data.root_pos_w[:, 2]
+#     vel = torch.norm(object.data.root_lin_vel_w, dim=-1)
+
+#     height_reward = torch.clamp(height / minimal_height, 0.0, 1.0)
+#     stability = torch.exp(-vel / max_velocity)
+
+#     return height_reward * stability
+
 
 def object_is_lifted_and_grasped(
     env: ManagerBasedRLEnv, minimal_height: float, object_cfg: SceneEntityCfg = SceneEntityCfg("object")

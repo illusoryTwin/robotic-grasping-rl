@@ -33,6 +33,7 @@ from omni.isaac.lab_tasks.manager_based.manipulation.lift.lift_env_cfg import Li
 from omni.isaac.lab.markers.config import FRAME_MARKER_CFG, VisualizationMarkersCfg  # isort: skip
 from omni.isaac.lab.assets import RigidObject
 from omni.isaac.lab.sim.spawners.shapes import CuboidCfg
+from manip_tasks.events import reset_robot_to_vertical_grasp_pose
 
 
 from typing import TYPE_CHECKING
@@ -66,7 +67,9 @@ from manip_tasks.rewards import (
     center_gripper_on_object,
     object_is_lifted_and_grasped,
     finger_object_distance_shaping,
-    both_fingers_contact_soft
+    both_fingers_contact_soft,
+    object_height_dense_reward,
+    grasp_stability_reward,
 )
 
 
@@ -120,7 +123,7 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     #     ),
     # )
 
-    # Tetra Pak-like carton (rectangular prism)
+    # Custom Tetra Pak
     object = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Object",
         init_state=RigidObjectCfg.InitialStateCfg(
@@ -144,27 +147,6 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         ),
     )
 
-
-#    # Tetra Pak carton
-#     object = RigidObjectCfg(
-#         prim_path="{ENV_REGEX_NS}/Object",
-#         init_state=RigidObjectCfg.InitialStateCfg(
-#             pos=[0.5, 0, 0.1],  # Adjust height for tetra pak
-#             rot=[1, 0, 0, 0],  # Upright orientation
-#         ),
-#         spawn=UsdFileCfg(
-#             usd_path=os.path.join(OBJECTS_DIR, "tetra-pak-carton.usd"),
-#             rigid_props=RigidBodyPropertiesCfg(
-#                 solver_position_iteration_count=16,
-#                 solver_velocity_iteration_count=1,
-#                 max_angular_velocity=1000.0,
-#                 max_linear_velocity=1000.0,
-#                 max_depenetration_velocity=5.0,
-#                 disable_gravity=False,
-#             ),
-#             collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-#         ),
-#     )
 
     # Frame transformer for end-effector tracking (Hand-E gripper)
     ee_frame = FrameTransformerCfg(
@@ -348,15 +330,24 @@ class EventCfg:
     #     },
     # )
 
-
-    reset_robot_joints = EventTerm(
-        func=mdp.reset_joints_by_scale,
+    # Curriculum: Start with vertical grasp pose
+    reset_robot_vertical_grasp = EventTerm(
+        func=reset_robot_to_vertical_grasp_pose,
         mode="reset",
         params={
-            "position_range": (0.5, 1.5),
-            "velocity_range": (0.0, 0.0),
+            "vertical_height_range": (0.25, 0.35),  # 25-35cm above object
+            "horizontal_offset_range": (-0.03, 0.03),  # Small random offset
         },
     )
+
+    # reset_robot_joints = EventTerm(
+    #     func=mdp.reset_joints_by_scale,
+    #     mode="reset",
+    #     params={
+    #         "position_range": (0.5, 1.5),
+    #         "velocity_range": (0.0, 0.0),
+    #     },
+    # )
 
 
 @configclass
@@ -382,7 +373,7 @@ class RewardsCfg:
 
     reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.7}, weight=1.0) #params={"std": 0.1}, weight=1.0)
 
-    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
+    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.04}, weight=10.0)
 
     object_goal_tracking = RewTerm(
         func=object_goal_distance,
@@ -396,12 +387,6 @@ class RewardsCfg:
         weight=5.0,
     )
 
-    # Finger-level shaping rewards
-    finger_shaping = RewTerm(
-        func=finger_object_distance_shaping,
-        params={"std": 0.3},
-        weight=3.0,
-    )
 
     both_fingers_contact = RewTerm(
         func=both_fingers_contact_soft,
