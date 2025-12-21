@@ -23,6 +23,10 @@ from pathlib import Path
 MANIP_RL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(MANIP_RL_DIR))
 
+# Fix for cusolver CUDA error - use alternative linear algebra backend
+import torch
+torch.backends.cuda.preferred_linalg_library("default")
+
 # Default logs directory (relative to current working directory, where isaaclab.sh runs from)
 LOGS_DIR = Path.cwd() / "logs" / "rsl_rl" / "ur10_lift"
 
@@ -77,12 +81,27 @@ AppLauncher.add_app_launcher_args(parser)
 # Parse args
 args_cli = parser.parse_args()
 
-# Force enable video rendering for visualization
+# Force enable cameras
 args_cli.enable_cameras = True
+# Also ensure headless is False for rendering
+if hasattr(args_cli, 'headless'):
+    args_cli.headless = False
 
 # Launch omniverse app
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+
+# Patch the camera check to always return True
+import omni.isaac.lab.app.app_launcher as app_launcher_module
+if hasattr(app_launcher_module, 'APPLAUNCHER_CFG'):
+    app_launcher_module.APPLAUNCHER_CFG["enable_cameras"] = True
+# Store it globally for camera class to find
+import sys
+sys._isaac_lab_enable_cameras = True
+
+# # Verify cameras are enabled
+# print(f"[DEBUG] enable_cameras flag: {args_cli.enable_cameras}")
+# print(f"[DEBUG] AppLauncher instance created successfully")
 
 # Import after launching the app
 import gymnasium as gym
@@ -138,6 +157,11 @@ def main():
         env_cfg.seed = agent_cfg.seed
 
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+
+    # Enable rendering for cameras
+    env_cfg.sim.enable_scene_query_support = True
+    if hasattr(env_cfg.sim, 'enable_cameras'):
+        env_cfg.sim.enable_cameras = True
 
     # Find checkpoint path
     if args_cli.checkpoint is not None:

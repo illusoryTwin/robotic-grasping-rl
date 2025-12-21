@@ -32,14 +32,26 @@ def object_orientation_in_robot_root_frame(env: ManagerBasedRLEnv) -> torch.Tens
 
 def wrist_camera_rgb(env: ManagerBasedRLEnv) -> torch.Tensor:
     """RGB image from wrist camera."""
-    camera_data = env.scene["wrist_camera"].data.output["rgb"]
+    camera = env.scene["wrist_camera"]
+    # Check if camera data is available (handles initialization phase)
+    if not hasattr(camera._data, "output") or camera._data.output is None:
+        # Return dummy RGB during initialization (height=480, width=640, channels=3)
+        return torch.zeros(env.num_envs, 480, 640, 3, device=env.device)
+
+    camera_data = camera.data.output["rgb"]
     # Return as (batch, height, width, channels)
     return camera_data[..., :3].float()
 
 
 def wrist_camera_depth(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Depth image from wrist camera (normalized)."""
-    camera_data = env.scene["wrist_camera"].data.output["distance_to_image_plane"]
+    camera = env.scene["wrist_camera"]
+    # Check if camera data is available (handles initialization phase)
+    if not hasattr(camera._data, "output") or camera._data.output is None:
+        # Return dummy depth during initialization (height=480, width=640, channels=1)
+        return torch.zeros(env.num_envs, 480, 640, 1, device=env.device)
+
+    camera_data = camera.data.output["distance_to_image_plane"]
     # Normalize depth to [0, 1] range, clip at 2 meters
     depth_max = 2.0
     depth_normalized = torch.clamp(camera_data, 0.0, depth_max) / depth_max
@@ -55,6 +67,14 @@ def visual_object_features(env: ManagerBasedRLEnv) -> torch.Tensor:
     """
     # Get camera data
     camera = env.scene["wrist_camera"]
+
+    # Check if camera is initialized and data is available
+    if (not hasattr(camera, '_data') or camera._data is None or
+        not hasattr(camera._data, "output") or camera._data.output is None or
+        not camera._is_initialized):
+        # Return dummy features if camera not initialized
+        return torch.zeros(env.num_envs, 7, device=env.device)
+
     depth = camera.data.output["distance_to_image_plane"]
     segmentation = camera.data.output["instance_segmentation_fast"]
 

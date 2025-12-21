@@ -64,8 +64,13 @@ from manip_tasks.rewards import (
     object_is_lifted,
     object_ee_distance,
     object_goal_distance,
+    # Vision-based rewards (using camera instead of privileged info)
+    object_ee_distance_visual,
+    object_is_lifted_visual,
+    object_goal_distance_visual,
 )
 
+from manip_tasks.events import reset_robot_to_vertical_grasp_pose
 
 MODALITIES = {
     "rgb": 4,
@@ -164,7 +169,7 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         update_period=0.001,
         height=480,
         width=640,
-        data_types=[*MODALITIES],
+        data_types=["rgb", "distance_to_image_plane", "instance_segmentation_fast"],
         colorize_instance_id_segmentation=False,
         colorize_semantic_segmentation=False,
         colorize_instance_segmentation=False,
@@ -289,11 +294,21 @@ class EventCfg:
         },
     )
 
+    # # Curriculum: Start with vertical grasp pose
+    # reset_robot_vertical_grasp = EventTerm(
+    #     func=reset_robot_to_vertical_grasp_pose,
+    #     mode="reset",
+    #     params={
+    #         "vertical_height_range": (0.25, 0.35),  # 25-35cm above object
+    #         "horizontal_offset_range": (-0.03, 0.03),  # Small random offset
+    #     },
+    # )
+
     reset_robot_joints = EventTerm(
         func=mdp.reset_joints_by_scale,
         mode="reset",
         params={
-            "position_range": (0.5, 1.5),
+            "position_range": (0.75, 1.25),
             "velocity_range": (0.0, 0.0),
         },
     )
@@ -318,18 +333,19 @@ class RewardsCfg:
     # )
 
 
-    reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.1}, weight=1.0)
+    # Vision-based rewards (using camera instead of privileged ground truth)
+    reaching_object = RewTerm(func=object_ee_distance_visual, params={"std": 0.1}, weight=1.0)
 
-    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.05}, weight=15.0)
+    lifting_object = RewTerm(func=object_is_lifted_visual, params={"minimal_height": 0.05}, weight=15.0)
 
     object_goal_tracking = RewTerm(
-        func=object_goal_distance,
+        func=object_goal_distance_visual,
         params={"std": 0.3, "minimal_height": 0.05, "command_name": "object_pose"},
         weight=16.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
-        func=object_goal_distance,
+        func=object_goal_distance_visual,
         params={"std": 0.05, "minimal_height": 0.05, "command_name": "object_pose"},
         weight=5.0,
     )

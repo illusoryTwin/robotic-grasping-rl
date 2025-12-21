@@ -13,15 +13,16 @@ if TYPE_CHECKING:
     from omni.isaac.lab.envs import ManagerBasedRLEnv
 from omni.isaac.lab.assets import RigidObject
 from omni.isaac.lab.managers import SceneEntityCfg
-from omni.isaac.lab.sensors import FrameTransformer
+from omni.isaac.lab.sensors import FrameTransformer, Camera
 from omni.isaac.lab.utils.math import combine_frame_transforms
+from manip_tasks.observations import visual_object_features
 
 def object_is_lifted(
     env: ManagerBasedRLEnv, minimal_height: float, object_cfg: SceneEntityCfg = SceneEntityCfg("object")
 ) -> torch.Tensor:
     """Reward the agent for lifting the object above the minimal height."""
     object: RigidObject = env.scene[object_cfg.name]
-    # print("object height", object.data.root_pos_w[:, 2])
+    print("object height", object.data.root_pos_w[:, 2])
     return torch.where(object.data.root_pos_w[:, 2] > minimal_height, 1.0, 0.0)
 
 
@@ -39,6 +40,25 @@ def object_ee_distance(
     cube_pos_w = object.data.root_pos_w
     # End-effector position: (num_envs, 3)
     ee_w = ee_frame.data.target_pos_w[..., 0, :]
+    
+    # Get end-effector orientation (quaternion)
+    ee_quat_w = ee_frame.data.target_quat_w[..., 0, :]  # (num_envs, 4) [w, x, y, z]
+    
+    # Print gripper orientation for first environment
+    if env.cfg.scene.num_envs > 0:
+        quat = ee_quat_w[0]
+        # Convert quaternion to Euler angles for easier interpretation
+        import numpy as np
+        w, x, y, z = quat[0].item(), quat[1].item(), quat[2].item(), quat[3].item()
+        
+        # Roll (x-axis rotation)
+        roll = np.arctan2(2*(w*x + y*z), 1 - 2*(x*x + y*y))
+        # Pitch (y-axis rotation)
+        pitch = np.arcsin(2*(w*y - z*x))
+        # Yaw (z-axis rotation)
+        yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
+        
+        # print(f"Gripper orientation - Quat: [{w:.3f}, {x:.3f}, {y:.3f}, {z:.3f}] | Euler (deg): [roll: {np.degrees(roll):.1f}, pitch: {np.degrees(pitch):.1f}, yaw: {np.degrees(yaw):.1f}]")
 
     # print("cube_pos_w", cube_pos_w)
     # print("ee_w", ee_w)
@@ -46,6 +66,29 @@ def object_ee_distance(
     object_ee_distance = torch.norm(cube_pos_w - ee_w, dim=1)
 
     return 1 - torch.tanh(object_ee_distance / std)
+
+
+# def object_ee_distance(
+#     env: ManagerBasedRLEnv,
+#     std: float,
+#     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+#     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+# ) -> torch.Tensor:
+#     """Reward the agent for reaching the object using tanh-kernel."""
+#     # extract the used quantities (to enable type-hinting)
+#     object: RigidObject = env.scene[object_cfg.name]
+#     ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+#     # Target object position: (num_envs, 3)
+#     cube_pos_w = object.data.root_pos_w
+#     # End-effector position: (num_envs, 3)
+#     ee_w = ee_frame.data.target_pos_w[..., 0, :]
+
+#     # print("cube_pos_w", cube_pos_w)
+#     # print("ee_w", ee_w)
+#     # Distance of the end-effector to the object: (num_envs,)
+#     object_ee_distance = torch.norm(cube_pos_w - ee_w, dim=1)
+
+#     return 1 - torch.tanh(object_ee_distance / std)
 
 
 def object_goal_distance(
@@ -457,4 +500,105 @@ def object_height_dense_reward(
 def time_penalty_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Small constant penalty per step to encourage faster grasping."""
     return torch.full((env.num_envs,), 0.05, device=env.device)
+
+
+##
+# Vision-based reward functions (using camera observations instead of privileged info)
+##
+
+def object_ee_distance_visual(
+    env: ManagerBasedRLEnv,
+    std: float,
+) -> torch.Tensor:
+    """Reward the agent for reaching the object using visual features from camera.
+
+    Uses camera-based object detection instead of privileged ground truth position.
+    """
+    # Get visual features: [x_cam, y_cam, z_cam, distance, u_norm, v_norm, depth_norm]
+    visual_features = visual_object_features(env)  # (num_envs, 7)
+
+    # Extract distance to object in camera frame (feature index 3)
+    object_distance = visual_features[:, 3]  # (num_envs,)
+
+    # Return tanh-shaped reward based on distance
+    return 1 - torch.tanh(object_distance / std)
+
+
+def object_is_lifted_visual(
+    env: ManagerBasedRLEnv,
+    minimal_height: float,
+) -> torch.Tensor:
+    """Reward for lifting object, estimated from visual features.
+
+    Uses camera depth and vertical position in image to estimate if object is lifted.
+    Note: This is an approximation since absolute height requires camera calibration.
+    """
+    # Get visual features
+    visual_features = visual_object_features(env)  # (num_envs, 7)
+
+    # Extract normalized vertical position in image (feature index 5)
+    # Objects higher in frame (smaller v_norm) are higher in world
+    v_norm = visual_features[:, 5]  # (num_envs,)
+    print("v_norm", v_norm)
+    # Extract depth (feature index 6)
+    depth_norm = visual_features[:, 6]  # (num_envs,)
+
+    # Heuristic: Object is lifted if it appears higher in frame (v_norm < 0.4)
+    # and is close to camera (depth_norm < 0.5, meaning < 1m away)
+    # This is approximate but works for downward-facing wrist camera
+    is_high_in_frame = v_norm < 0.4
+    is_close = depth_norm < 0.5
+    is_lifted = is_high_in_frame & is_close
+
+    return torch.where(is_lifted, 1.0, 0.0)
+
+
+def object_goal_distance_visual(
+    env: ManagerBasedRLEnv,
+    std: float,
+    command_name: str,
+    minimal_height: float,
+) -> torch.Tensor:
+    """Reward for tracking goal pose, using visual estimation of object position.
+
+    Combines visual lifting detection with distance to commanded goal.
+    """
+    # Get visual features
+    visual_features = visual_object_features(env)  # (num_envs, 7)
+
+    # Get commanded target position (in robot base frame)
+    command = env.command_manager.get_command(command_name)  # (num_envs, 7)
+    target_pos_b = command[:, :3]  # (num_envs, 3)
+
+    # Transform camera-frame object position to robot base frame (approximate)
+    # visual_features[0:3] = [x_cam, y_cam, z_cam]
+    # For wrist camera pointing down, approximate transformation
+    obj_pos_cam = visual_features[:, :3]  # (num_envs, 3)
+
+    # Get end-effector frame to transform from camera to base
+    ee_frame: FrameTransformer = env.scene["ee_frame"]
+    ee_pos_w = ee_frame.data.target_pos_w[..., 0, :]  # (num_envs, 3)
+    ee_quat_w = ee_frame.data.target_quat_w[..., 0, :]  # (num_envs, 4)
+
+    # Transform object from camera frame to world frame (simplified)
+    # obj_pos_w ≈ ee_pos_w + camera_offset + obj_pos_cam
+    # This is approximate; for accurate transform use full camera extrinsics
+    obj_pos_w_est = ee_pos_w + obj_pos_cam * torch.tensor([1.0, 1.0, -1.0], device=env.device)
+
+    # Get robot base transform
+    robot = env.scene["robot"]
+    robot_pos_w = robot.data.root_state_w[:, :3]
+    robot_quat_w = robot.data.root_state_w[:, 3:7]
+
+    # Transform target from base to world frame
+    target_pos_w, _ = combine_frame_transforms(robot_pos_w, robot_quat_w, target_pos_b)
+
+    # Distance from estimated object position to target
+    distance = torch.norm(target_pos_w - obj_pos_w_est, dim=1)
+
+    # Check if object is lifted (visual estimate)
+    is_lifted = object_is_lifted_visual(env, minimal_height)
+
+    # Reward: distance to goal if lifted
+    return is_lifted * (1 - torch.tanh(distance / std))
 

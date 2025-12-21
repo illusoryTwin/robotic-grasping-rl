@@ -23,6 +23,15 @@ from datetime import datetime
 MANIP_RL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(MANIP_RL_DIR))
 
+# Fix for numpy version conflicts - import system numpy first before Isaac Sim
+import numpy as np
+# Ensure system numpy is used by gymnasium and other packages
+sys.modules['numpy'] = np
+
+# Fix for cusolver CUDA error - use alternative linear algebra backend
+import torch
+torch.backends.cuda.preferred_linalg_library("default")
+
 from omni.isaac.lab.app import AppLauncher
 
 # Add argparse arguments
