@@ -99,36 +99,11 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     # Set UR10 with Hand-E gripper
     robot = UR10_WITH_GRIPPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-    # # Custom tin-can
-    # object = RigidObjectCfg(
-    #     prim_path="{ENV_REGEX_NS}/Object",
-    #     init_state=RigidObjectCfg.InitialStateCfg(
-    #         pos=[0.5, 0, 0.075],
-    #         rot=[1, 0, 0, 0],
-    #     ),
-    #     spawn=sim_utils.CylinderCfg(
-    #         radius=0.033,  
-    #         height=0.08,
-    #         visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.05, 0.05, 0.05)),
-    #         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-    #             solver_position_iteration_count=16,
-    #             solver_velocity_iteration_count=1,
-    #             max_angular_velocity=1000.0,
-    #             max_linear_velocity=1000.0,
-    #             max_depenetration_velocity=5.0,
-    #             disable_gravity=False,
-    #         ),
-    #         mass_props=sim_utils.MassPropertiesCfg(mass=0.05),  # 50g
-    #         collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-    #     ),
-    # )
-
     # Custom Tetra Pak
     object = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Object",
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=[0.5, 0, 0.027],  # Adjust height for tetra pak
-            # rot=[1, 0, 0, 0],  # Upright orientation
             rot=[0.707, 0.707, 0, 0],  # Rotated 90° to lie on long side
         ),
         spawn=CuboidCfg(
@@ -187,30 +162,6 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
     )
 
-    # Camera disabled for faster training with privileged info
-    # Uncomment to enable vision-based training
-    # wrist_camera = CameraCfg(
-    #     prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/wrist_camera",
-    #     update_period=0.001,
-    #     height=480,
-    #     width=640,
-    #     data_types=[*MODALITIES],
-    #     colorize_instance_id_segmentation=False,
-    #     colorize_semantic_segmentation=False,
-    #     colorize_instance_segmentation=False,
-    #     spawn=sim_utils.PinholeCameraCfg(
-    #         focal_length=24.0,
-    #         focus_distance=400.0,
-    #         horizontal_aperture=20.955,
-    #         clipping_range=(0.01, 1e5),
-    #     ),
-    #     offset=CameraCfg.OffsetCfg(
-    #         pos=(0.1, 0.1, 0.1),
-    #         rot=(0.1, 0.1, 0.1, 0.1),
-    #         convention="ros",
-    #     ),
-    # )
-
 
 
 ##
@@ -245,8 +196,8 @@ class ActionsCfg:
     # Set actions for UR10
     arm_action = mdp.JointPositionActionCfg(
         asset_name="robot",
-        joint_names=[".*"], # ["shoulder_.*", "elbow_joint", "wrist_.*"],
-        scale=0.5,
+        joint_names=[".*"],
+        scale=0.3, # 0.5,
         use_default_offset=True,
     )
     # Hand-E gripper (parallel jaw gripper)
@@ -373,7 +324,7 @@ class RewardsCfg:
 
     reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.7}, weight=1.0) #params={"std": 0.1}, weight=1.0)
 
-    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.04}, weight=10.0)
+    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
 
     object_goal_tracking = RewTerm(
         func=object_goal_distance,
@@ -390,7 +341,7 @@ class RewardsCfg:
 
     both_fingers_contact = RewTerm(
         func=both_fingers_contact_soft,
-        params={"std": 0.3},
+        params={"std": 0.1},
         weight=4.0,
     )
 
@@ -404,7 +355,7 @@ class RewardsCfg:
     
     joint_acc = RewTerm(
         func=mdp.joint_acc_l2,
-        weight=-1e-5,
+        weight=-1e-4, #-1e-5
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
