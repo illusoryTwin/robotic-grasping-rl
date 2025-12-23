@@ -43,10 +43,10 @@ UR10_WITH_GRIPPER_CFG = ArticulationCfg(
     actuators={
         "arm": ImplicitActuatorCfg(
             joint_names_expr=["shoulder_.*", "elbow_joint", "wrist_.*"],
-            velocity_limit=100.0,
+            velocity_limit=10.0, # 100.0,
             effort_limit=87.0,
-            stiffness=800.0,
-            damping=40.0,
+            stiffness=400.0, #800.0,
+            damping=80.0, #40.0,
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=[".*finger.*"],

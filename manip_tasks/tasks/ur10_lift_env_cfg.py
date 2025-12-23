@@ -111,8 +111,8 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
             rigid_props=RigidBodyPropertiesCfg(
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=1,
-                max_angular_velocity=1000.0,
-                max_linear_velocity=1000.0,
+                max_angular_velocity=50.0,
+                max_linear_velocity=50.0,
                 max_depenetration_velocity=5.0,
                 disable_gravity=False,
             ),
@@ -197,7 +197,7 @@ class ActionsCfg:
     arm_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=[".*"],
-        scale=0.3, # 0.5,
+        scale=0.5,
         use_default_offset=True,
     )
     # Hand-E gripper (parallel jaw gripper)
@@ -345,11 +345,11 @@ class RewardsCfg:
         weight=4.0,
     )
 
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01) #-1e-4)
 
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
-        weight=-1e-4,
+        weight=-0.001, #-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     
