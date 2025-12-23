@@ -34,6 +34,7 @@ from omni.isaac.lab.markers.config import FRAME_MARKER_CFG, VisualizationMarkers
 from omni.isaac.lab.assets import RigidObject
 from omni.isaac.lab.sim.spawners.shapes import CuboidCfg
 from manip_tasks.events import reset_robot_to_vertical_grasp_pose
+from omni.isaac.lab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 
 from typing import TYPE_CHECKING
@@ -70,6 +71,10 @@ from manip_tasks.rewards import (
     both_fingers_contact_soft,
     object_height_dense_reward,
     grasp_stability_reward,
+    position_command_error,
+    position_command_error_tanh,
+    orientation_command_error,
+    penalize_non_finger_contact,
 )
 
 
@@ -173,7 +178,8 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
 class CommandsCfg:
     """Command terms for the MDP."""
 
-    object_pose = mdp.UniformPoseCommandCfg(
+    # object_pose 
+    ee_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
         body_name="hande_end",  # Hand-E gripper tip
         resampling_time_range=(5.0, 5.0),
@@ -183,8 +189,8 @@ class CommandsCfg:
             pos_y=(-0.25, 0.25), 
             pos_z=(0.25, 0.5), 
             roll=(0.0, 0.0), 
-            pitch=(0.0, 0.0), 
-            yaw=(0.0, 0.0)
+            pitch=(math.pi / 2, math.pi / 2), 
+            yaw=(-3.14, 3.14),
         ),
     )
 
@@ -218,19 +224,26 @@ class ObservationsCfg:
     class PolicyCfg(ObsGroup):
         """Observations for policy group."""
 
-        # Proprioceptive observations
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        # # Proprioceptive observations
+        # joint_pos = ObsTerm(func=mdp.joint_pos_rel)
+        # joint_vel = ObsTerm(func=mdp.joint_vel_rel)
 
-        # # OPTION A: Vision-based (no ground truth)
-        # visual_features = ObsTerm(func=visual_object_features)
+        # # # OPTION A: Vision-based (no ground truth)
+        # # visual_features = ObsTerm(func=visual_object_features)
 
-        # OPTION B: Ground truth (privileged info)
-        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
-        object_orientation = ObsTerm(func=object_orientation_in_robot_root_frame)
+        # # OPTION B: Ground truth (privileged info)
+        # object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        # object_orientation = ObsTerm(func=object_orientation_in_robot_root_frame)
 
-        # Task command
-        target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
+        # # Task command
+        # target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
+        # actions = ObsTerm(func=mdp.last_action)
+
+
+        # observation terms (order preserved)
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
+        pose_command = ObsTerm(func=mdp.generated_commands, params={"command_name": "ee_pose"})
         actions = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
@@ -320,30 +333,54 @@ class RewardsCfg:
     # )
 
 
-    # reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.5}, weight=1.0) #params={"std": 0.1}, weight=1.0)
-
-    reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.7}, weight=1.0) #params={"std": 0.1}, weight=1.0)
-
-    lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
-
-    object_goal_tracking = RewTerm(
-        func=object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose"},
-        weight=16.0,
+    # task terms
+    end_effector_position_tracking = RewTerm(
+        func=position_command_error,
+        weight=-0.2,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=["hande_end"]), "command_name": "ee_pose"},
+    )
+    end_effector_position_tracking_fine_grained = RewTerm(
+        func=position_command_error_tanh,
+        weight=0.1,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=["hande_end"]), "std": 0.1, "command_name": "ee_pose"},
+    )
+    end_effector_orientation_tracking = RewTerm(
+        func=orientation_command_error,
+        weight=-0.1,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=["hande_end"]), "command_name": "ee_pose"},
     )
 
-    object_goal_tracking_fine_grained = RewTerm(
-        func=object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
-        weight=5.0,
-    )
+    # # Penalize contact with non-gripper links
+    # non_finger_contact_penalty = RewTerm(
+    #     func=penalize_non_finger_contact,
+    #     params={"contact_threshold": 0.05},
+    #     weight=5.0,
+    # )
+
+    # # reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.5}, weight=1.0) #params={"std": 0.1}, weight=1.0)
+
+    # reaching_object = RewTerm(func=object_ee_distance, params={"std": 0.7}, weight=1.0) #params={"std": 0.1}, weight=1.0)
+
+    # lifting_object = RewTerm(func=object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
+
+    # object_goal_tracking = RewTerm(
+    #     func=object_goal_distance,
+    #     params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose"},
+    #     weight=16.0,
+    # )
+
+    # object_goal_tracking_fine_grained = RewTerm(
+    #     func=object_goal_distance,
+    #     params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
+    #     weight=5.0,
+    # )
 
 
-    both_fingers_contact = RewTerm(
-        func=both_fingers_contact_soft,
-        params={"std": 0.1},
-        weight=4.0,
-    )
+    # both_fingers_contact = RewTerm(
+    #     func=both_fingers_contact_soft,
+    #     params={"std": 0.1},
+    #     weight=4.0,
+    # )
 
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01) #-1e-4)
 

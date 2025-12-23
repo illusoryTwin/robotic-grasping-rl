@@ -9,12 +9,68 @@ from __future__ import annotations
 from omni.isaac.lab.managers import SceneEntityCfg
 from omni.isaac.lab.sensors import FrameTransformer
 from omni.isaac.lab.utils.math import combine_frame_transforms
+from omni.isaac.lab.utils.math import combine_frame_transforms, quat_error_magnitude, quat_mul
 
 import torch
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from omni.isaac.lab.envs import ManagerBasedRLEnv
+
+
+
+def position_command_error(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Penalize tracking of the position error using L2-norm.
+
+    The function computes the position error between the desired position (from the command) and the
+    current position of the asset's body (in world frame). The position error is computed as the L2-norm
+    of the difference between the desired and current positions.
+    """
+    # extract the asset (to enable type hinting)
+    asset: RigidObject = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    # obtain the desired and current positions
+    des_pos_b = command[:, :3]
+    des_pos_w, _ = combine_frame_transforms(asset.data.root_state_w[:, :3], asset.data.root_state_w[:, 3:7], des_pos_b)
+    curr_pos_w = asset.data.body_state_w[:, asset_cfg.body_ids[0], :3]  # type: ignore
+    return torch.norm(curr_pos_w - des_pos_w, dim=1)
+
+
+def position_command_error_tanh(
+    env: ManagerBasedRLEnv, std: float, command_name: str, asset_cfg: SceneEntityCfg
+) -> torch.Tensor:
+    """Reward tracking of the position using the tanh kernel.
+
+    The function computes the position error between the desired position (from the command) and the
+    current position of the asset's body (in world frame) and maps it with a tanh kernel.
+    """
+    # extract the asset (to enable type hinting)
+    asset: RigidObject = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    # obtain the desired and current positions
+    des_pos_b = command[:, :3]
+    des_pos_w, _ = combine_frame_transforms(asset.data.root_state_w[:, :3], asset.data.root_state_w[:, 3:7], des_pos_b)
+    curr_pos_w = asset.data.body_state_w[:, asset_cfg.body_ids[0], :3]  # type: ignore
+    distance = torch.norm(curr_pos_w - des_pos_w, dim=1)
+    return 1 - torch.tanh(distance / std)
+
+
+def orientation_command_error(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Penalize tracking orientation error using shortest path.
+
+    The function computes the orientation error between the desired orientation (from the command) and the
+    current orientation of the asset's body (in world frame). The orientation error is computed as the shortest
+    path between the desired and current orientations.
+    """
+    # extract the asset (to enable type hinting)
+    asset: RigidObject = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    # obtain the desired and current orientations
+    des_quat_b = command[:, 3:7]
+    des_quat_w = quat_mul(asset.data.root_state_w[:, 3:7], des_quat_b)
+    curr_quat_w = asset.data.body_state_w[:, asset_cfg.body_ids[0], 3:7]  # type: ignore
+    return quat_error_magnitude(curr_quat_w, des_quat_w)
+
 
 def object_is_lifted(
     env: ManagerBasedRLEnv, minimal_height: float, object_cfg: SceneEntityCfg = SceneEntityCfg("object")
@@ -596,6 +652,72 @@ def both_fingers_contact_soft(
     
     left_contact = torch.exp(-left_dist / std)
     right_contact = torch.exp(-right_dist / std)
-    
+
     # Reward is product of both contacts (encourages both fingers to be close)
     return left_contact * right_contact
+
+
+def penalize_non_finger_contact(
+    env: ManagerBasedRLEnv,
+    contact_threshold: float = 0.05,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Penalize contact of object with non-gripper links.
+
+    This reward function:
+    - Returns 0 (no penalty) when all non-finger links are far from object
+    - Returns negative values when non-finger links are close to object
+    - Uses exponential decay to create smooth gradients
+
+    Args:
+        env: The RL environment.
+        contact_threshold: Distance threshold for considering contact (in meters).
+        object_cfg: Configuration for the object entity.
+
+    Returns:
+        Penalty tensor of shape (num_envs,). Values are 0 or negative.
+    """
+    robot = env.scene["robot"]
+    object: RigidObject = env.scene[object_cfg.name]
+
+    # Get object position (num_envs, 3)
+    obj_pos = object.data.root_pos_w[:, :3]
+
+    # Get all robot body positions (num_envs, num_bodies, 3)
+    all_body_positions = robot.data.body_pos_w
+
+    # Find finger body indices to exclude them
+    left_finger_idx = robot.find_bodies("hande_left_finger")[0][0]
+    right_finger_idx = robot.find_bodies("hande_right_finger")[0][0]
+    finger_indices = {left_finger_idx, right_finger_idx}
+
+    # Get indices of all non-finger bodies
+    num_bodies = all_body_positions.shape[1]
+    non_finger_indices = [i for i in range(num_bodies) if i not in finger_indices]
+
+    # Get positions of non-finger bodies (num_envs, num_non_finger_bodies, 3)
+    non_finger_positions = all_body_positions[:, non_finger_indices, :]
+
+    # Compute distances from object to each non-finger link
+    # obj_pos: (num_envs, 3) -> (num_envs, 1, 3) for broadcasting
+    # non_finger_positions: (num_envs, num_non_finger_bodies, 3)
+    obj_pos_expanded = obj_pos.unsqueeze(1)
+    distances = torch.norm(non_finger_positions - obj_pos_expanded, dim=-1)  # (num_envs, num_non_finger_bodies)
+
+    # Find minimum distance to any non-finger link for each environment
+    min_distances = torch.min(distances, dim=-1)[0]  # (num_envs,)
+
+    # Penalize when min_distance < contact_threshold using exponential penalty
+    # When distance is large: penalty -> 0
+    # When distance is small: penalty -> -1
+    penalty = -torch.exp(-min_distances / contact_threshold) + 1.0
+
+    # Only apply penalty when actually close (distance < 2*contact_threshold)
+    # This avoids small penalties when robot is far away
+    penalty = torch.where(
+        min_distances < 2 * contact_threshold,
+        penalty,
+        torch.zeros_like(penalty)
+    )
+
+    return penalty
