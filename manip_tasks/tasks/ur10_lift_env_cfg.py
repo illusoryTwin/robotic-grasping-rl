@@ -250,16 +250,16 @@ class ObservationsCfg:
             self.enable_corruption = True
             self.concatenate_terms = True
 
-    @configclass
-    class ImageCfg(ObsGroup):
-        """Visual observations from wrist camera."""
+    # @configclass
+    # class ImageCfg(ObsGroup):
+    #     """Visual observations from wrist camera."""
 
-        rgb = ObsTerm(func=wrist_camera_rgb)
-        depth = ObsTerm(func=wrist_camera_depth)
+    #     rgb = ObsTerm(func=wrist_camera_rgb)
+    #     depth = ObsTerm(func=wrist_camera_depth)
 
-        def __post_init__(self):
-            self.enable_corruption = False
-            self.concatenate_terms = False  # Keep images separate
+    #     def __post_init__(self):
+    #         self.enable_corruption = False
+    #         self.concatenate_terms = False  # Keep images separate
 
     # observation groups
     policy: PolicyCfg = PolicyCfg()
@@ -270,48 +270,48 @@ class ObservationsCfg:
 class EventCfg:
     """Configuration for events."""
 
-    reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+    # reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+
+    # # # reset_object_position = EventTerm(
+    # # #     func=mdp.reset_root_state_uniform,
+    # # #     mode="reset",
+    # # #     params={
+    # # #         # Randomize object position on the table (relative to base position [0.5, 0, 0.075])
+    # # #         "pose_range": {"x": (-0.15, 0.15), "y": (-0.2, 0.2), "z": (0.075, 0.075)},
+    # # #         "velocity_range": {},
+    # # #         "asset_cfg": SceneEntityCfg("object", body_names="Object"),
+    # # #     },
+    # # # )
 
     # # reset_object_position = EventTerm(
     # #     func=mdp.reset_root_state_uniform,
     # #     mode="reset",
     # #     params={
-    # #         # Randomize object position on the table (relative to base position [0.5, 0, 0.075])
-    # #         "pose_range": {"x": (-0.15, 0.15), "y": (-0.2, 0.2), "z": (0.075, 0.075)},
+    # #         # Randomize object position on the table (relative to base position for tetra pak)
+    # #         "pose_range": {"x": (-0.2, 0.2), "y": (-0.2, 0.2), "z": (0.1, 0.1)},
     # #         "velocity_range": {},
     # #         "asset_cfg": SceneEntityCfg("object", body_names="Object"),
     # #     },
     # # )
 
-    # reset_object_position = EventTerm(
-    #     func=mdp.reset_root_state_uniform,
+    # # Curriculum: Start with vertical grasp pose
+    # reset_robot_vertical_grasp = EventTerm(
+    #     func=reset_robot_to_vertical_grasp_pose,
     #     mode="reset",
     #     params={
-    #         # Randomize object position on the table (relative to base position for tetra pak)
-    #         "pose_range": {"x": (-0.2, 0.2), "y": (-0.2, 0.2), "z": (0.1, 0.1)},
-    #         "velocity_range": {},
-    #         "asset_cfg": SceneEntityCfg("object", body_names="Object"),
+    #         "vertical_height_range": (0.25, 0.35),  # 25-35cm above object
+    #         "horizontal_offset_range": (-0.03, 0.03),  # Small random offset
     #     },
     # )
 
-    # Curriculum: Start with vertical grasp pose
-    reset_robot_vertical_grasp = EventTerm(
-        func=reset_robot_to_vertical_grasp_pose,
+    reset_robot_joints = EventTerm(
+        func=mdp.reset_joints_by_scale,
         mode="reset",
         params={
-            "vertical_height_range": (0.25, 0.35),  # 25-35cm above object
-            "horizontal_offset_range": (-0.03, 0.03),  # Small random offset
+            "position_range": (0.75, 1.25),
+            "velocity_range": (0.0, 0.0),
         },
     )
-
-    # reset_robot_joints = EventTerm(
-    #     func=mdp.reset_joints_by_scale,
-    #     mode="reset",
-    #     params={
-    #         "position_range": (0.5, 1.5),
-    #         "velocity_range": (0.0, 0.0),
-    #     },
-    # )
 
 
 @configclass
@@ -382,11 +382,11 @@ class RewardsCfg:
     #     weight=4.0,
     # )
 
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01) #-1e-4)
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
-        weight=-0.001, #-1e-4,
+        weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     
