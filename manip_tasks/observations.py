@@ -13,6 +13,38 @@ if TYPE_CHECKING:
     from omni.isaac.lab.envs import ManagerBasedRLEnv
 
 
+def ee_orientation_error(
+    env: ManagerBasedRLEnv,
+    command_name: str = "object_pose",
+) -> torch.Tensor:
+    """Orientation error between current EE orientation and commanded target.
+
+    Computes the relative quaternion (q_error = q_target^-1 * q_current) and
+    returns the vector part (x, y, z) which represents the rotation axis scaled
+    by sin(angle/2). This is a common representation for orientation error in control.
+
+    Returns:
+        Orientation error of shape (num_envs, 3).
+    """
+    from omni.isaac.lab.utils.math import quat_mul, quat_conjugate
+
+    # Get current EE orientation
+    ee_frame = env.scene["ee_frame"]
+    ee_quat = ee_frame.data.target_quat_w[:, 0, :]  # (num_envs, 4) - [w, x, y, z]
+
+    # Get commanded target orientation from command manager
+    command = env.command_manager.get_command(command_name)
+    target_quat = command[:, 3:7]  # (num_envs, 4) - [w, x, y, z]
+
+    # Compute orientation error: q_error = q_target^-1 * q_current
+    target_quat_inv = quat_conjugate(target_quat)
+    quat_error = quat_mul(target_quat_inv, ee_quat)
+
+    # Return vector part (x, y, z) as orientation error
+    # This is proportional to rotation axis * sin(angle/2)
+    return quat_error[:, 1:4]
+
+
 def object_orientation_in_robot_root_frame(env: ManagerBasedRLEnv) -> torch.Tensor:
     """The orientation (quaternion) of the object in the robot's root frame.
     

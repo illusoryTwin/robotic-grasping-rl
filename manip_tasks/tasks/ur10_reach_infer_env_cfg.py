@@ -56,7 +56,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from assets import UR10_WITH_GRIPPER_CFG
 
 # Import custom observation functions
-from manip_tasks.observations import object_orientation_in_robot_root_frame
+from manip_tasks.observations import object_orientation_in_robot_root_frame, ee_orientation_error
 
 
 ##
@@ -148,13 +148,13 @@ class CommandsCfg:
 
 @configclass
 class ActionsCfg:
-    """Action configuration matching training (7 dims total)."""
+    """Action configuration matching training (9 dims total)."""
 
-    # Arm: 6 joints only (shoulder_*, elbow_joint, wrist_*)
+    # Arm: all 8 joints (6 arm + 2 gripper via JointPositionAction)
     arm_action = mdp.JointPositionActionCfg(
         asset_name="robot",
-        joint_names=["shoulder_.*", "elbow_joint", "wrist_.*"],
-        scale=0.2,
+        joint_names=[".*"],
+        scale=0.5,
         use_default_offset=True,
     )
 
@@ -169,7 +169,7 @@ class ActionsCfg:
 
 @configclass
 class ObservationsCfg:
-    """Observation configuration matching training (37 dims total)."""
+    """Observation configuration matching training (35 dims total)."""
 
     @configclass
     class PolicyCfg(ObsGroup):
@@ -181,19 +181,19 @@ class ObservationsCfg:
         # joint_vel: 8 dims
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
 
-        # object_position: 3 dims
-        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
-
-        # object_orientation: 4 dims
-        object_orientation = ObsTerm(func=object_orientation_in_robot_root_frame)
-
-        # target_object_position (command): 7 dims
-        target_object_position = ObsTerm(
+        # pose_command (ee_pose): 7 dims
+        pose_command = ObsTerm(
             func=mdp.generated_commands,
             params={"command_name": "object_pose"}
         )
 
-        # actions: 7 dims (last action)
+        # ee_orient_error: 3 dims
+        ee_orient_error = ObsTerm(
+            func=ee_orientation_error,
+            params={"command_name": "object_pose"}
+        )
+
+        # actions: 9 dims (last action)
         actions = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):

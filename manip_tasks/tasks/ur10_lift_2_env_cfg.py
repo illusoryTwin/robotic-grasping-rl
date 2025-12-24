@@ -180,7 +180,7 @@ class CommandsCfg:
     """Command terms for the MDP."""
 
     # object_pose 
-    ee_pose = mdp.UniformPoseCommandCfg(
+    object_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
         body_name="hande_end",  # Hand-E gripper tip
         resampling_time_range=(5.0, 5.0),
@@ -427,7 +427,7 @@ class CurriculumCfg:
 
 
 @configclass
-class UR10LiftEnvCfg(ManagerBasedRLEnvCfg):
+class UR10Lift2EnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the lifting environment."""
 
     # Scene settings (replicate_physics=True since using single object type)

@@ -26,8 +26,8 @@ from pathlib import Path
 MANIP_RL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(MANIP_RL_DIR))
 
-# Default logs directory
-LOGS_DIR = Path.cwd() / "logs" / "rsl_rl" / "ur10_lift"
+# Default logs directory (IsaacLab training location)
+LOGS_DIR = Path.home() / "sber_ws" / "RL" / "IsaacLab" / "logs" / "rsl_rl" / "ur10_lift"
 
 
 def find_latest_checkpoint(logs_dir: Path = LOGS_DIR) -> tuple[Path, Path]:
@@ -72,7 +72,7 @@ parser.add_argument("--task", type=str, default="Isaac-Reach-UR10-Infer-v0", hel
 parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint (.pt)")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments")
 parser.add_argument("--seed", type=int, default=42, help="Random seed")
-parser.add_argument("--z_offset", type=float, default=0.07, help="Z offset above object (meters)")
+parser.add_argument("--z_offset", type=float, default=0.5, help="Z offset above object (meters)")
 AppLauncher.add_app_launcher_args(parser)
 
 # Parse args
@@ -192,9 +192,9 @@ def main():
 
             # Compute target pose: object position + Z offset
             target_pos = object_pos.clone()
-            target_pos[:, 2] += args_cli.z_offset  # Add Z offset (7cm default)
+            target_pos[:, 2] += 0.1  # Add Z offset (10cm)
 
-            # Target orientation: same as object (or you can set a fixed orientation)
+            # Target orientation: same as object's orientation
             target_quat = object_quat.clone()
 
             # IMPORTANT: Override the command with our custom target pose
@@ -203,11 +203,25 @@ def main():
 
             # Get the command manager and manually set the command
             command_manager = isaac_env.command_manager
-            if hasattr(command_manager, '_terms') and 'ee_pose' in command_manager._terms:
-                command_manager._terms['ee_pose'].command = command
+            if hasattr(command_manager, '_terms'):
+                if 'object_pose' in command_manager._terms:
+                    command_manager._terms['object_pose'].command[:] = command
+                elif 'ee_pose' in command_manager._terms:
+                    command_manager._terms['ee_pose'].command[:] = command
 
             # Get observations (which now include our custom command)
             obs, _ = env.get_observations()
+
+            # Observation structure: joint_pos(8) + joint_vel(8) + pose_command(7) + ee_orient_error(3) + actions(9) = 35
+            # Indices:
+            #   0:8   - joint_pos
+            #   8:16  - joint_vel
+            #   16:23 - pose_command (target pose)
+            #   23:26 - ee_orient_error
+            #   26:35 - last_action
+
+            # Override pose_command with our target pose (position + orientation)
+            obs[:, 16:23] = command
 
             with torch.inference_mode():
                 # Get actions from policy
