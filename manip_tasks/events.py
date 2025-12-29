@@ -85,10 +85,10 @@ def reset_robot_to_vertical_grasp_pose(
     # For UR10 with vertical grasp - trying alternative configuration
     # Experimenting to find the right orientation for vertical gripper
     joint_pos[env_ids, 0] = 0.0      # shoulder_pan: facing forward
-    joint_pos[env_ids, 1] = -1.57    # shoulder_lift: -90 degrees
-    joint_pos[env_ids, 2] = 1.57     # elbow: 90 degrees
-    joint_pos[env_ids, 3] = 0.0      # wrist_1: 0 degrees
-    joint_pos[env_ids, 4] = -1.57    # wrist_2: -90 degrees (try this for vertical)
+    joint_pos[env_ids, 1] = -1.19    # shoulder_lift: -90 degrees
+    joint_pos[env_ids, 2] = 1.7     # elbow: 90 degrees
+    joint_pos[env_ids, 3] = -2.07 # 0.0      # wrist_1: 0 degrees
+    joint_pos[env_ids, 4] = -1.7    # wrist_2: -90 degrees (try this for vertical)
     joint_pos[env_ids, 5] = 0.0      # wrist_3: 0 degrees
     
     # Add small random variations to avoid perfect symmetry

@@ -635,26 +635,100 @@ def both_fingers_contact_soft(
     """Soft reward for both fingers being in contact with object."""
     robot = env.scene["robot"]
     object: RigidObject = env.scene[object_cfg.name]
-    
+
     # Get finger positions
     left_idx = robot.find_bodies("hande_left_finger")[0][0]
     right_idx = robot.find_bodies("hande_right_finger")[0][0]
-    
+
     left_finger_pos = robot.data.body_pos_w[:, left_idx, :]
     right_finger_pos = robot.data.body_pos_w[:, right_idx, :]
-    
+
     # Object position
     obj_pos = object.data.root_pos_w[:, :3]
-    
+
     # Soft contact rewards (exponential decay)
     left_dist = torch.norm(left_finger_pos - obj_pos, dim=-1)
     right_dist = torch.norm(right_finger_pos - obj_pos, dim=-1)
-    
+
     left_contact = torch.exp(-left_dist / std)
     right_contact = torch.exp(-right_dist / std)
 
     # Reward is product of both contacts (encourages both fingers to be close)
     return left_contact * right_contact
+
+
+def object_centered_between_fingers(
+    env: ManagerBasedRLEnv,
+    std: float = 0.02,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Reward when object's COM is centered BETWEEN gripper fingers.
+
+    This reward encourages the object to be:
+    1. On the line connecting the two fingers (perpendicular distance = 0)
+    2. At the midpoint between the fingers (centered)
+    3. Actually between the fingers, not outside them
+
+    Args:
+        env: The RL environment.
+        std: Standard deviation for reward shaping (smaller = sharper).
+        object_cfg: Configuration for the object entity.
+
+    Returns:
+        Reward tensor of shape (num_envs,). Higher when object is centered between fingers.
+    """
+    robot = env.scene["robot"]
+    object: RigidObject = env.scene[object_cfg.name]
+
+    # Get finger positions
+    left_idx = robot.find_bodies("hande_left_finger")[0][0]
+    right_idx = robot.find_bodies("hande_right_finger")[0][0]
+
+    left_finger_pos = robot.data.body_pos_w[:, left_idx, :]  # (num_envs, 3)
+    right_finger_pos = robot.data.body_pos_w[:, right_idx, :]  # (num_envs, 3)
+
+    # Object COM position
+    obj_pos = object.data.root_pos_w[:, :3]  # (num_envs, 3)
+
+    # Compute midpoint between fingers
+    midpoint = (left_finger_pos + right_finger_pos) / 2.0  # (num_envs, 3)
+
+    # Compute finger axis (direction from left to right finger)
+    finger_axis = right_finger_pos - left_finger_pos  # (num_envs, 3)
+    finger_axis_length = torch.norm(finger_axis, dim=-1, keepdim=True) + 1e-6
+    finger_axis_normalized = finger_axis / finger_axis_length  # (num_envs, 3)
+    half_span = finger_axis_length.squeeze(-1) / 2.0  # (num_envs,) - half distance between fingers
+
+    # Vector from midpoint to object
+    midpoint_to_obj = obj_pos - midpoint  # (num_envs, 3)
+
+    # Project object position onto finger axis
+    # This gives us how far along the axis the object is from the midpoint
+    # Positive = toward right finger, Negative = toward left finger
+    projection_along_axis = torch.sum(midpoint_to_obj * finger_axis_normalized, dim=-1)  # (num_envs,)
+
+    # Compute perpendicular distance from object to finger axis
+    projection_vector = projection_along_axis.unsqueeze(-1) * finger_axis_normalized
+    perpendicular_vector = midpoint_to_obj - projection_vector
+    perpendicular_dist = torch.norm(perpendicular_vector, dim=-1)  # (num_envs,)
+
+    # Check if object is BETWEEN the fingers (projection within [-half_span, +half_span])
+    # If |projection| > half_span, object is outside the finger span
+    abs_projection = torch.abs(projection_along_axis)
+
+    # Distance outside the finger span (0 if between fingers)
+    outside_span_dist = torch.clamp(abs_projection - half_span, min=0.0)  # (num_envs,)
+
+    # Combined reward:
+    # 1. Reward for being on the axis (low perpendicular distance)
+    # 2. Reward for being centered (projection close to 0)
+    # 3. Penalty for being outside the finger span
+    on_axis_reward = torch.exp(-perpendicular_dist / std)
+    centered_reward = torch.exp(-abs_projection / std)  # Reward for being at midpoint
+    between_fingers_reward = torch.exp(-outside_span_dist / std)  # 1.0 if between, decays if outside
+
+    # Multiply all: high only when all conditions are met
+    return on_axis_reward * centered_reward * between_fingers_reward
 
 
 def penalize_non_finger_contact(
@@ -721,3 +795,90 @@ def penalize_non_finger_contact(
     )
 
     return penalty
+
+
+def gripper_contact_reward(
+    env: ManagerBasedRLEnv,
+    finger_std: float = 0.02,
+    non_finger_threshold: float = 0.05,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Combined reward: encourage finger contact, penalize non-finger contact.
+
+    This reward function:
+    - Positive reward when gripper fingers are close to the object
+    - Negative penalty when other robot links are close to the object
+    - The reward encourages proper grasping with fingers only
+
+    Args:
+        env: The RL environment.
+        finger_std: Standard deviation for finger contact reward (smaller = sharper).
+        non_finger_threshold: Distance threshold for non-finger penalty.
+        object_cfg: Configuration for the object entity.
+
+    Returns:
+        Combined reward tensor of shape (num_envs,).
+        Positive values indicate good finger contact, negative indicate bad contact.
+    """
+    robot = env.scene["robot"]
+    object: RigidObject = env.scene[object_cfg.name]
+
+    # Get object position (num_envs, 3)
+    obj_pos = object.data.root_pos_w[:, :3]
+
+    # === FINGER CONTACT REWARD (positive) ===
+    # Get finger positions
+    left_finger_idx = robot.find_bodies("hande_left_finger")[0][0]
+    right_finger_idx = robot.find_bodies("hande_right_finger")[0][0]
+
+    left_finger_pos = robot.data.body_pos_w[:, left_finger_idx, :]
+    right_finger_pos = robot.data.body_pos_w[:, right_finger_idx, :]
+
+    # Compute distances from fingers to object
+    left_dist = torch.norm(left_finger_pos - obj_pos, dim=-1)
+    right_dist = torch.norm(right_finger_pos - obj_pos, dim=-1)
+
+    # Soft contact rewards (exponential decay) - higher when closer
+    left_contact = torch.exp(-left_dist / finger_std)
+    right_contact = torch.exp(-right_dist / finger_std)
+
+    # Product of both contacts (encourages BOTH fingers to be close)
+    finger_reward = left_contact * right_contact
+
+    # === NON-FINGER CONTACT PENALTY (negative) ===
+    # Get all robot body positions
+    all_body_positions = robot.data.body_pos_w
+    finger_indices = {left_finger_idx, right_finger_idx}
+
+    # Get indices of non-finger bodies
+    num_bodies = all_body_positions.shape[1]
+    non_finger_indices = [i for i in range(num_bodies) if i not in finger_indices]
+
+    # Get positions of non-finger bodies
+    non_finger_positions = all_body_positions[:, non_finger_indices, :]
+
+    # Compute distances from object to each non-finger link
+    obj_pos_expanded = obj_pos.unsqueeze(1)
+    distances = torch.norm(non_finger_positions - obj_pos_expanded, dim=-1)
+
+    # Find minimum distance to any non-finger link
+    min_non_finger_dist = torch.min(distances, dim=-1)[0]
+
+    # Penalty: exponential when close, zero when far
+    # Returns value in [0, 1] where 1 = very close (bad), 0 = far (good)
+    non_finger_penalty = torch.exp(-min_non_finger_dist / non_finger_threshold)
+
+    # Only apply penalty when actually close
+    non_finger_penalty = torch.where(
+        min_non_finger_dist < 2 * non_finger_threshold,
+        non_finger_penalty,
+        torch.zeros_like(non_finger_penalty)
+    )
+
+    # === COMBINED REWARD ===
+    # finger_reward: [0, 1] positive (good finger contact)
+    # non_finger_penalty: [0, 1] negative (bad non-finger contact)
+    # Result: positive when fingers touch, negative when other parts touch
+    combined = finger_reward - non_finger_penalty
+
+    return combined

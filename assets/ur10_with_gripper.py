@@ -38,6 +38,9 @@ UR10_WITH_GRIPPER_CFG = ArticulationCfg(
             "wrist_1_joint": 0.0,
             "wrist_2_joint": 0.0,
             "wrist_3_joint": 0.0,
+            # Gripper open (0.0425 = open, 0.0 = closed)
+            "hande_left_finger_joint": 0.0425,
+            "hande_right_finger_joint": 0.0425,
         },
     ),
     actuators={

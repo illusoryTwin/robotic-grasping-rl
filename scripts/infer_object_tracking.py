@@ -68,7 +68,7 @@ from omni.isaac.lab.app import AppLauncher
 
 # Add argparse arguments
 parser = argparse.ArgumentParser(description="Inference: Move EE 7cm above object")
-parser.add_argument("--task", type=str, default="Isaac-Reach-UR10-Infer-v0", help="Task name")
+parser.add_argument("--task", type=str, default="Isaac-Lift-UR10-v0", help="Task name")
 parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint (.pt)")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments")
 parser.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -190,11 +190,8 @@ def main():
             object_pos = object_asset.data.root_pos_w.clone()  # (num_envs, 3)
             object_quat = object_asset.data.root_quat_w.clone()  # (num_envs, 4)
 
-            # Compute target pose: object position + Z offset
+            # Use object's pose directly as the command
             target_pos = object_pos.clone()
-            target_pos[:, 2] += 0.1  # Add Z offset (10cm)
-
-            # Target orientation: same as object's orientation
             target_quat = object_quat.clone()
 
             # IMPORTANT: Override the command with our custom target pose
@@ -204,15 +201,16 @@ def main():
             # Get the command manager and manually set the command
             command_manager = isaac_env.command_manager
             if hasattr(command_manager, '_terms'):
-                if 'object_pose' in command_manager._terms:
-                    command_manager._terms['object_pose'].command[:] = command
-                elif 'ee_pose' in command_manager._terms:
+                if 'ee_pose' in command_manager._terms:
                     command_manager._terms['ee_pose'].command[:] = command
+                elif 'object_pose' in command_manager._terms:
+                    command_manager._terms['object_pose'].command[:] = command
 
             # Get observations (which now include our custom command)
             obs, _ = env.get_observations()
 
-            # Observation structure: joint_pos(8) + joint_vel(8) + pose_command(7) + ee_orient_error(3) + actions(9) = 35
+            # Observation structure for Isaac-Lift-UR10-v0:
+            # joint_pos(8) + joint_vel(8) + pose_command(7) + ee_orient_error(3) + actions(9) = 35
             # Indices:
             #   0:8   - joint_pos
             #   8:16  - joint_vel
@@ -220,7 +218,7 @@ def main():
             #   23:26 - ee_orient_error
             #   26:35 - last_action
 
-            # Override pose_command with our target pose (position + orientation)
+            # Override pose_command with our target pose (object's pose)
             obs[:, 16:23] = command
 
             with torch.inference_mode():
