@@ -193,7 +193,7 @@ class LiftSceneCfg(InteractiveSceneCfg):
     object = RigidObjectCfg(
       prim_path="{ENV_REGEX_NS}/TetraPakCustom",
       init_state=RigidObjectCfg.InitialStateCfg(
-          pos=[0.9, -0.3, 0.027],
+          pos=[0.5, 0.0, 0.03],  # Centered on table, z=half of lying height (0.06/2)
           rot=[0.707, 0.707, 0, 0],  # Rotated 90° to lie on long side
       ),
       spawn=sim_utils.CuboidCfg(
@@ -351,10 +351,10 @@ class EventCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            # Randomize object position on the table (relative to base position [0.5, 0, 0.075])
-            "pose_range": {"x": (-0.15, 0.15), "y": (-0.2, 0.2), "z": (0.075, 0.075)},
+            # Randomize object position on the table (relative to init position [0.5, 0, 0.03])
+            "pose_range": {"x": (-0.1, 0.1), "y": (-0.15, 0.15), "z": (0.0, 0.0)},
             "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object", body_names="Object"),
+            "asset_cfg": SceneEntityCfg("object"),
         },
     )
 
