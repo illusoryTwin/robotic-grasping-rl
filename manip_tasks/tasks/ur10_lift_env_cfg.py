@@ -5,45 +5,43 @@ from __future__ import annotations
 
 from dataclasses import MISSING
 
-import omni.isaac.lab.sim as sim_utils
-from omni.isaac.lab.assets import ArticulationCfg, AssetBaseCfg, DeformableObjectCfg, RigidObjectCfg
-from omni.isaac.lab.envs import ManagerBasedRLEnvCfg
-from omni.isaac.lab.managers import CurriculumTermCfg as CurrTerm
-from omni.isaac.lab.managers import EventTermCfg as EventTerm
-from omni.isaac.lab.managers import ObservationGroupCfg as ObsGroup
-from omni.isaac.lab.managers import ObservationTermCfg as ObsTerm
-from omni.isaac.lab.managers import RewardTermCfg as RewTerm
-from omni.isaac.lab.managers import SceneEntityCfg
-from omni.isaac.lab.managers import TerminationTermCfg as DoneTerm
-from omni.isaac.lab.scene import InteractiveSceneCfg
-from omni.isaac.lab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg
-from omni.isaac.lab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
-from omni.isaac.lab.utils import configclass
-from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
-from omni.isaac.lab.assets import ArticulationCfg, RigidObjectCfg
-from omni.isaac.lab.actuators import ImplicitActuatorCfg
-from omni.isaac.lab.sensors import FrameTransformerCfg, CameraCfg
-from omni.isaac.lab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
-from omni.isaac.lab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
-from omni.isaac.lab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
-from omni.isaac.lab.utils import configclass
-from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
-from omni.isaac.lab_tasks.manager_based.manipulation.lift import mdp
-from omni.isaac.lab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
-from omni.isaac.lab.markers.config import FRAME_MARKER_CFG, VisualizationMarkersCfg  # isort: skip
-from omni.isaac.lab.assets import RigidObject
-from omni.isaac.lab.managers import SceneEntityCfg
-from omni.isaac.lab.sensors import FrameTransformer
-from omni.isaac.lab.utils.math import combine_frame_transforms
+import isaaclab.sim as sim_utils
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, DeformableObjectCfg, RigidObjectCfg
+from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
+from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
+from isaaclab.managers import ObservationTermCfg as ObsTerm
+from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import TerminationTermCfg as DoneTerm
+from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg
+from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
+from isaaclab.utils import configclass
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+from isaaclab.assets import ArticulationCfg, RigidObjectCfg
+from isaaclab.actuators import ImplicitActuatorCfg
+from isaaclab.sensors import FrameTransformerCfg, CameraCfg
+from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
+from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
+from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
+from isaaclab.utils import configclass
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+from isaaclab_tasks.manager_based.manipulation.lift import mdp
+from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
+from isaaclab.markers.config import FRAME_MARKER_CFG, VisualizationMarkersCfg  # isort: skip
+from isaaclab.assets import RigidObject
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.sensors import FrameTransformer
+from isaaclab.utils.math import combine_frame_transforms
 
 
 import torch
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omni.isaac.lab.envs import ManagerBasedRLEnv
-
-
+    from isaaclab.envs import ManagerBasedRLEnv
 
 
 
@@ -142,7 +140,7 @@ OBJECTS_DIR = os.path.join(str(Path.home()), "Workspace/Projects/robotic-graspin
 
 
 @configclass
-class ObjectTableSceneCfg(InteractiveSceneCfg):
+class ManipulationSceneCfg(InteractiveSceneCfg):
     """Configuration for the lift scene with a robot and a object.
     This is the abstract base implementation, the exact scene is defined in the derived classes
     which need to set the target object, robot and end-effector frames
@@ -536,7 +534,7 @@ class UR10LiftEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the lifting environment."""
 
     # Scene settings (replicate_physics=True since using single object type)
-    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
+    scene: ManipulationSceneCfg = ManipulationSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
@@ -666,7 +664,7 @@ class UR10LiftEnvCfg(ManagerBasedRLEnvCfg):
 
 
 # @configclass
-# class ObjectTableSceneCfg(InteractiveSceneCfg):
+# class ManipulationSceneCfg(InteractiveSceneCfg):
 #     """Configuration for the lift scene with a robot and a object.
 #     This is the abstract base implementation, the exact scene is defined in the derived classes
 #     which need to set the target object, robot and end-effector frames
@@ -973,7 +971,7 @@ class UR10LiftEnvCfg(ManagerBasedRLEnvCfg):
 #     """Configuration for the lifting environment."""
 
 #     # Scene settings (replicate_physics=True since using single object type)
-#     scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
+#     scene: ManipulationSceneCfg = ManipulationSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
 #     # Basic settings
 #     observations: ObservationsCfg = ObservationsCfg()
 #     actions: ActionsCfg = ActionsCfg()

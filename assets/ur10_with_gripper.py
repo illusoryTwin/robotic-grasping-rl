@@ -6,10 +6,10 @@
 """UR10 robot with Hand-E gripper configuration."""
 
 import os
-from omni.isaac.lab.assets import ArticulationCfg
-from omni.isaac.lab.actuators import ImplicitActuatorCfg
-from omni.isaac.lab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
-from omni.isaac.lab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
+from isaaclab.assets import ArticulationCfg
+from isaaclab.actuators import ImplicitActuatorCfg
+from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
+from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 
 
 """UR10 manipulator with a gripper and camera mount.
