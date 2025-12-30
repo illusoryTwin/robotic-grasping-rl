@@ -1,85 +1,51 @@
 # Copyright (c) 2025 Ekaterina Mozhegova
-#
 # SPDX-License-Identifier: MIT
+
 from __future__ import annotations
-
-from dataclasses import MISSING
-
-import omni.isaac.lab.sim as sim_utils
-from omni.isaac.lab.assets import ArticulationCfg, AssetBaseCfg, DeformableObjectCfg, RigidObjectCfg
-from omni.isaac.lab.envs import ManagerBasedRLEnvCfg
-from omni.isaac.lab.managers import CurriculumTermCfg as CurrTerm
-from omni.isaac.lab.managers import EventTermCfg as EventTerm
-from omni.isaac.lab.managers import ObservationGroupCfg as ObsGroup
-from omni.isaac.lab.managers import ObservationTermCfg as ObsTerm
-from omni.isaac.lab.managers import RewardTermCfg as RewTerm
-from omni.isaac.lab.managers import SceneEntityCfg
-from omni.isaac.lab.managers import TerminationTermCfg as DoneTerm
-from omni.isaac.lab.scene import InteractiveSceneCfg
-from omni.isaac.lab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg
-from omni.isaac.lab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
-from omni.isaac.lab.utils import configclass
-from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
-from omni.isaac.lab.assets import ArticulationCfg, RigidObjectCfg
-from omni.isaac.lab.actuators import ImplicitActuatorCfg
-from omni.isaac.lab.sensors import FrameTransformerCfg, CameraCfg
-from omni.isaac.lab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
-from omni.isaac.lab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
-from omni.isaac.lab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
-from omni.isaac.lab.utils import configclass
-from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
-from omni.isaac.lab_tasks.manager_based.manipulation.lift import mdp
-from omni.isaac.lab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
-from omni.isaac.lab.markers.config import FRAME_MARKER_CFG, VisualizationMarkersCfg  # isort: skip
-from omni.isaac.lab.assets import RigidObject
-from omni.isaac.lab.sim.spawners.shapes import CuboidCfg
-from manip_tasks.events import reset_robot_to_vertical_grasp_pose
-from omni.isaac.lab.utils.noise import AdditiveUniformNoiseCfg as Unoise
-
-
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from omni.isaac.lab.envs import ManagerBasedRLEnv
 
 import math
 import os
-from pathlib import Path
-import numpy as np
-import torch
-
-# Import robot configuration from custom assets (UR10 with Hand-E gripper)
 import sys
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+# Isaac Lab core imports
+import isaaclab.sim as sim_utils
+from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
+from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab.managers import (
+    CurriculumTermCfg as CurrTerm,
+    EventTermCfg as EventTerm,
+    ObservationGroupCfg as ObsGroup,
+    ObservationTermCfg as ObsTerm,
+    RewardTermCfg as RewTerm,
+    SceneEntityCfg,
+    TerminationTermCfg as DoneTerm,
+)
+from isaaclab.markers.config import FRAME_MARKER_CFG
+from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg, OffsetCfg
+from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
+from isaaclab.utils import configclass
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
+
+# Isaac Lab tasks MDP
+from isaaclab_tasks.manager_based.manipulation.lift import mdp
+
+# Local imports - robot configuration
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from assets import UR10_WITH_GRIPPER_CFG
 
-# Import custom observation functions
-from manip_tasks.observations import (
-    object_orientation_in_robot_root_frame,
-    wrist_camera_rgb,
-    wrist_camera_depth,
-    visual_object_features,
-    ee_orientation_error,
-)
-
-# Import custom command
-from manip_tasks.commands import ObjectPoseCommandCfg
-
-# Import custom reward functions
+# Local imports - custom rewards
 from manip_tasks.rewards import (
-    object_is_lifted,
-    object_ee_distance,
-    object_goal_distance,
-    center_gripper_on_object,
-    object_is_lifted_and_grasped,
-    finger_object_distance_shaping,
-    both_fingers_contact_soft,
-    object_height_dense_reward,
-    grasp_stability_reward,
+    orientation_command_error,
     position_command_error,
     position_command_error_tanh,
-    orientation_command_error,
-    penalize_non_finger_contact,
 )
+
+if TYPE_CHECKING:
+    from isaaclab.envs import ManagerBasedRLEnv
 
 
 MODALITIES = {
