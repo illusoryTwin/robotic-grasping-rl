@@ -59,13 +59,9 @@ MODALITIES = {
 OBJECTS_DIR = os.path.join(str(Path.home()), "Workspace/Projects/robotic-grasping-rl/objects")
 
 
-##
-# Scene definition
-##
-
 
 @configclass
-class ObjectTableSceneCfg(InteractiveSceneCfg):
+class ReachSceneCfg(InteractiveSceneCfg):
     """Configuration for the lift scene with a robot and a object.
     This is the abstract base implementation, the exact scene is defined in the derived classes
     which need to set the target object, robot and end-effector frames
@@ -148,12 +144,18 @@ class CommandsCfg:
         resampling_time_range=(4.0, 4.0),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(0.35, 0.65),
-            pos_y=(-0.2, 0.2),
-            pos_z=(0.15, 0.5),
-            roll=(0.0, 0.0),
-            pitch=(math.pi / 2, math.pi / 2),  # depends on end-effector axis
-            yaw=(-3.14, 3.14),
+            pos_x=(0.3, 0.85),
+            pos_y=(-0.3, 0.3),
+            pos_z=(0.08, 0.5),
+            roll=(-math.pi, math.pi),
+            pitch=(-math.pi, math.pi),
+            yaw=(-math.pi, math.pi),
+            # pos_x=(0.35, 0.65),
+            # pos_y=(-0.2, 0.2),
+            # pos_z=(0.15, 0.5),
+            # roll=(0.0, 0.0),
+            # pitch=(-math.pi / 2, math.pi / 2),
+            # yaw=(-3.14, 3.14),
         ),
     )
 
@@ -234,14 +236,25 @@ class RewardsCfg:
         weight=-0.1,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["hande_end"]), "command_name": "ee_pose"},
     )
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
+    # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-3)
+    # joint_vel = RewTerm(
+    #     func=mdp.joint_vel_l2,
+    #     weight=-1e-4,
+    #     params={"asset_cfg": SceneEntityCfg("robot")},
+    # )
+    # joint_acc = RewTerm(
+    #     func=mdp.joint_acc_l2,
+    #     weight=-1e-4, #-1e-5
+    #     params={"asset_cfg": SceneEntityCfg("robot")},
+    # )
+
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
-    
     joint_acc = RewTerm(
         func=mdp.joint_acc_l2,
         weight=-1e-4, #-1e-5
@@ -276,7 +289,7 @@ class UR10ReachEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the reaching environment."""
 
     # Scene settings (replicate_physics=True since using single object type)
-    scene: ObjectTableSceneCfg = ObjectTableSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
+    scene: ReachSceneCfg = ReachSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
