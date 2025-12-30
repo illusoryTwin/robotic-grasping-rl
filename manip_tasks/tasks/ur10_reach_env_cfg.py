@@ -237,18 +237,6 @@ class RewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["hande_end"]), "command_name": "ee_pose"},
     )
 
-    # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-3)
-    # joint_vel = RewTerm(
-    #     func=mdp.joint_vel_l2,
-    #     weight=-1e-4,
-    #     params={"asset_cfg": SceneEntityCfg("robot")},
-    # )
-    # joint_acc = RewTerm(
-    #     func=mdp.joint_acc_l2,
-    #     weight=-1e-4, #-1e-5
-    #     params={"asset_cfg": SceneEntityCfg("robot")},
-    # )
-
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
@@ -257,7 +245,7 @@ class RewardsCfg:
     )
     joint_acc = RewTerm(
         func=mdp.joint_acc_l2,
-        weight=-1e-4, #-1e-5
+        weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
