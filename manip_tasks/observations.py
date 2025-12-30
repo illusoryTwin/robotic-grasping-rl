@@ -10,7 +10,7 @@ import torch
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omni.isaac.lab.envs import ManagerBasedRLEnv
+    from isaaclab.envs import ManagerBasedRLEnv
 
 
 def ee_orientation_error(
@@ -26,7 +26,7 @@ def ee_orientation_error(
     Returns:
         Orientation error of shape (num_envs, 3).
     """
-    from omni.isaac.lab.utils.math import quat_mul, quat_conjugate
+    from isaaclab.utils.math import quat_mul, quat_conjugate
 
     # Get current EE orientation
     ee_frame = env.scene["ee_frame"]
@@ -51,7 +51,7 @@ def object_orientation_in_robot_root_frame(env: ManagerBasedRLEnv) -> torch.Tens
     Returns:
         Quaternion [qw, qx, qy, qz] of shape (num_envs, 4).
     """
-    from omni.isaac.lab.utils.math import subtract_frame_transforms
+    from isaaclab.utils.math import subtract_frame_transforms
     robot = env.scene["robot"]
     obj = env.scene["object"]
     object_pos_w = obj.data.root_pos_w[:, :3]
